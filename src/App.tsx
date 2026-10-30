@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { DepartedRepo, AltarOffering } from './types';
-import { CemeteryWorld } from './components/CemeteryWorld';
+import { Cemetery3D } from './components/Cemetery3D';
 import { ThreeAltar } from './components/ThreeAltar';
 import { DevilsContract } from './components/DevilsContract';
 import { OfferingModal } from './components/OfferingModal';
@@ -132,8 +132,8 @@ export const App: React.FC = () => {
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-[#08060e] text-calavera-bone">
       
-      {/* THE FULLSCREEN CEMETERY GAME ENGINE (The Entire Website) */}
-      <CemeteryWorld
+      {/* THE FULLSCREEN 2.5D WEBGL CEMETERY WORLD */}
+      <Cemetery3D
         repos={repos}
         offerings={offerings}
         onOpenContract={handleOpenContract}
