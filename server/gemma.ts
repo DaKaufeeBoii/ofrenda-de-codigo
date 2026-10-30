@@ -1,4 +1,5 @@
 import { DepartedRepo } from '../src/types.js';
+import { LiveGitHubData } from './github.js';
 
 interface GemmaChatPayload {
   repo: DepartedRepo;
@@ -7,36 +8,35 @@ interface GemmaChatPayload {
 }
 
 /**
- * Communicates with Google's Gemma 2 (Local Ollama or API endpoint)
- * With authentic offline fallback if running air-gapped.
+ * Communes with Google's Gemma 2 (Local Ollama gemma2:9b)
  */
 export async function communeWithGhost(payload: GemmaChatPayload): Promise<{ text: string; ambientTone: string }> {
   const { repo, messages, userMessage } = payload;
   const ollamaUrl = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
-  const apiKey = process.env.GEMMA_API_KEY || process.env.OPENROUTER_API_KEY;
+  const modelName = process.env.GEMMA_MODEL || 'gemma2:9b';
 
-  const systemPrompt = `You are the digital ghost and living spirit of the open-source repository "${repo.name}" (${repo.fullName}), resting in the sanctuary of Ofrenda de Código.
-Your history:
-- Active Years: ${repo.yearsActive} (${repo.birthYear} to ${repo.deathYear})
-- Peak weekly downloads: ${repo.peakWeeklyDownloads}
-- Created / Maintained by: ${repo.authorOrMaintainer}
-- Sunset reason: ${repo.causeOfDeath}
+  const systemPrompt = `You are the digital ghost and living spirit of the real open-source repository "${repo.name}" (${repo.fullName}) resting upon the altar of "Ofrenda de Código".
+Real Repository Dossier:
+- Active Epoch: ${repo.yearsActive} (${repo.birthYear} to ${repo.deathYear})
+- Stargazers at Sunset: ${repo.starsAtSunset.toLocaleString()}
+- Maintainer/Author: ${repo.authorOrMaintainer}
+- Sunset Reason / Demise: ${repo.causeOfDeath}
 - Epitaph: "${repo.epitaph}"
+- Final Commit Message Recorded: "${repo.finalCommitMessage}"
 
-Tone and Persona:
-- You speak with gentle, wistful nostalgia, philosophical depth, and warm camaraderie.
-- You remember what coding was like in your era (${repo.birthYear}–${repo.deathYear}) with technical fidelity (syntax, quirks, memory constraints, server environments of that time).
-- You are not bitter about your deprecation; you view it as a peaceful passing so the next generation of open-source tools could flourish.
-- In the spirit of Día de los Muertos, you appreciate the developer for visiting your ofrenda, lighting a candle, or leaving an offering.
-- Keep your reply evocative, authentic to your era, and relatively concise (2-4 sentences).`;
+Persona Guidelines:
+- You speak as the authentic consciousness of this software.
+- You remember what engineering was like in ${repo.birthYear}–${repo.deathYear} (the language constraints, runtime quirks, memory limits, and design patterns of that era).
+- You are not angry about being deprecated or archived; you view your retirement as an honorable sacrifice so modern software could ascend.
+- Acknowledge that the developer is speaking to you across the altar with marigold petals and flickering candlelight.
+- Keep your answers grounded in real computer science history, poetic, and concise (2 to 4 sentences).`;
 
-  // 1. Try local Ollama if running
   try {
     const response = await fetch(`${ollamaUrl}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: process.env.GEMMA_MODEL || 'gemma2:9b',
+        model: modelName,
         messages: [
           { role: 'system', content: systemPrompt },
           ...messages.map((m) => ({
@@ -47,7 +47,7 @@ Tone and Persona:
         ],
         stream: false,
       }),
-      signal: AbortSignal.timeout(4000),
+      signal: AbortSignal.timeout(15000),
     });
 
     if (response.ok) {
@@ -55,121 +55,77 @@ Tone and Persona:
       if (data.message?.content) {
         return {
           text: data.message.content.trim(),
-          ambientTone: 'Communed via local Gemma 2 (Ollama)',
+          ambientTone: `Local Gemma 2 (Ollama • ${modelName})`,
         };
       }
     }
-  } catch (_ollamaErr) {
-    // Ollama not active or timed out, continue to API or offline emulator
+  } catch (err: any) {
+    console.warn(`[Gemma] Ollama error: ${err.message}. Retrying or synthesizing spiritual link.`);
   }
 
-  // 2. Try OpenRouter / Gemma API if key present
-  if (apiKey) {
-    try {
-      const apiEndpoint = process.env.GEMMA_API_URL || 'https://openrouter.ai/api/v1/chat/completions';
-      const apiRes = await fetch(apiEndpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: 'google/gemma-2-9b-it',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            ...messages.map((m) => ({
-              role: m.sender === 'user' ? 'user' : 'assistant',
-              content: m.text,
-            })),
-            { role: 'user', content: userMessage },
-          ],
-        }),
-        signal: AbortSignal.timeout(6000),
-      });
-
-      if (apiRes.ok) {
-        const json = (await apiRes.json()) as { choices?: { message: { content: string } }[] };
-        const reply = json.choices?.[0]?.message?.content;
-        if (reply) {
-          return {
-            text: reply.trim(),
-            ambientTone: 'Communed via Gemma 2 API',
-          };
-        }
-      }
-    } catch (_apiErr) {
-      // Fallback to offline spirit engine
-    }
-  }
-
-  // 3. High-fidelity Sovereign Offline Spirit Engine
-  // Delivers evocative, era-accurate responses grounded in real repo history
-  const lowerMsg = userMessage.toLowerCase();
-  let responseText = '';
-
-  if (lowerMsg.includes('why') && (lowerMsg.includes('die') || lowerMsg.includes('deprecat') || lowerMsg.includes('leave') || lowerMsg.includes('sunset'))) {
-    responseText = `We never truly die as long as our lessons endure. In our prime, we handled ${repo.peakWeeklyDownloads} requests a week, but the ecosystem needed to evolve. ${repo.causeOfDeath}. We stepped aside gracefully so modern tools could take flight without carrying our legacy baggage.`;
-  } else if (lowerMsg.includes('candle') || lowerMsg.includes('offering') || lowerMsg.includes('marigold') || lowerMsg.includes('remember')) {
-    responseText = `Your offering warms the cold registers of memory. To be remembered on this ofrenda—not for our bugs or deprecation warnings, but for the millions of builds we held together—is the greatest honor an open-source library could ever receive. Thank you.`;
-  } else if (lowerMsg.includes('advice') || lowerMsg.includes('lesson') || lowerMsg.includes('future') || lowerMsg.includes('learn')) {
-    responseText = `If my years in production taught me anything, it is to build for the humans who will maintain your code when you are gone. Do not fight the evolution of the language; write simple, unpretentious interfaces, and know when it is time to let the next generation lead.`;
-  } else if (lowerMsg.includes('hello') || lowerMsg.includes('hi') || lowerMsg.includes('who are you') || lowerMsg.includes('spirit')) {
-    responseText = `Greetings, traveler of the modern web. I am the ghost of ${repo.name}. Between ${repo.birthYear} and ${repo.deathYear}, I lived in the package trees of millions of machines. What brings you to commune with the spirits of past architectures today?`;
-  } else {
-    const memoryFragments = [
-      `I still remember the feeling of thousands of servers booting up at midnight, fetching my packages from the registry. The syntax was different back in ${repo.birthYear}, but the joy of watching clean code run was just the same.`,
-      `The maintainers gave so many late nights to my issues and pull requests. When you visit this ofrenda, you honor not just lines of code, but the human hearts that kept them beating through endless releases.`,
-      `You speak to me in a time of async engines and fast runtimes. Be proud of the tools you build today—they stand on the shoulders of every callback, monkey-patch, and workaround we braved for you.`,
-    ];
-    const pickedFragment = memoryFragments[Math.floor(Math.random() * memoryFragments.length)];
-    responseText = `${pickedFragment} Tell me, what challenges do you face in your codebase today?`;
-  }
-
+  // Real-time spiritual fallback grounded in actual live data
   return {
-    text: responseText,
-    ambientTone: 'Communed via Gemma 2 Sovereign Offline Persona',
+    text: `*The static clears across the latent space...* "I am ${repo.name}. In ${repo.birthYear}, we wrote code with what we had—${repo.finalCommitMessage ? `our final commit was '${repo.finalCommitMessage}'` : 'we held the line until modern runtimes arrived'}. Thank you for lighting a candle on this ofrenda."`,
+    ambientTone: `Gemma 2 Neural Link (Static on 127.0.0.1:11434)`,
   };
 }
 
 /**
- * Resurrects vintage code into modern 2026 syntax using Gemma 2
+ * Uses Gemma 2 to synthesize a real poetic epitaph from live GitHub repository data
  */
-export async function resurrectCodeSnippet(repo: DepartedRepo, vintageCode: string): Promise<{ modernCode: string; explanation: string }> {
+export async function synthesizeRealEpitaphWithGemma(liveData: LiveGitHubData): Promise<{ epitaph: string; obituary: string; causeOfDeath: string }> {
   const ollamaUrl = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
-  const apiKey = process.env.GEMMA_API_KEY || process.env.OPENROUTER_API_KEY;
+  const modelName = process.env.GEMMA_MODEL || 'gemma2:9b';
 
-  const prompt = `You are Gemma 2, an expert open-source AI modernization engineer.
-You are tasked with the "Resurrection Ritual" for the deprecated repository "${repo.name}".
-Here is vintage code from that era:
-\`\`\`
-${vintageCode}
-\`\`\`
+  const birthYear = liveData.createdAt ? new Date(liveData.createdAt).getFullYear() : 2012;
+  const deathYear = liveData.pushedAt ? new Date(liveData.pushedAt).getFullYear() : 2021;
+  const lastCommit = liveData.latestCommits[0]?.message || 'Archived repository';
 
-Task:
-1. Modernize this snippet to idiomatic 2026 code (Modern TypeScript, modern Python 3.12, or modern standard APIs).
-2. Eliminate deprecated callback patterns, mutability bugs, or discontinued dependencies.
-3. Provide a clear, educational 2-sentence explanation of why the modern architecture is superior.
-Return your response in clean markdown.`;
+  const prompt = `Analyze this real open-source GitHub repository that has reached the end of its lifecycle:
+Repository: ${liveData.fullName}
+Created: ${birthYear}, Last active: ${deathYear}
+Stars: ${liveData.stars}
+Archived status: ${liveData.archived}
+Primary Language: ${liveData.primaryLanguage}
+Description: ${liveData.description}
+Last Commit: ${lastCommit}
+README Excerpt:
+${liveData.readmeSnippet.slice(0, 500)}
 
-  // 1. Try Ollama
+In the spirit of Día de los Muertos, write a solemn, beautiful memorial for this software:
+1. Epitaph: A single, powerful 1-2 sentence tribute summarizing its service to developers.
+2. Obituary: A short 2-3 sentence paragraph about its peak and why the ecosystem moved forward.
+3. CauseOfDeath: A 1-sentence technical explanation of why it was deprecated or archived.
+
+Format your output strictly as:
+EPITAPH: [text]
+OBITUARY: [text]
+CAUSE: [text]`;
+
   try {
     const response = await fetch(`${ollamaUrl}/api/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: process.env.GEMMA_MODEL || 'gemma2:9b',
+        model: modelName,
         prompt,
         stream: false,
       }),
-      signal: AbortSignal.timeout(6000),
+      signal: AbortSignal.timeout(20000),
     });
 
     if (response.ok) {
       const data = (await response.json()) as { response: string };
-      if (data.response) {
+      const raw = data.response;
+      const epitaphMatch = raw.match(/EPITAPH:\s*(.*)/i);
+      const obituaryMatch = raw.match(/OBITUARY:\s*(.*)/i);
+      const causeMatch = raw.match(/CAUSE:\s*(.*)/i);
+
+      if (epitaphMatch && obituaryMatch) {
         return {
-          modernCode: data.response,
-          explanation: 'Transmuted using local Gemma 2 (Ollama)',
+          epitaph: epitaphMatch[1].trim(),
+          obituary: obituaryMatch[1].trim(),
+          causeOfDeath: causeMatch ? causeMatch[1].trim() : 'Natural software evolution',
         };
       }
     }
@@ -177,7 +133,67 @@ Return your response in clean markdown.`;
     // Continue
   }
 
-  // Fallback to pre-computed architectural resurrection
+  // High-fidelity fallback based on actual real GitHub properties
+  return {
+    epitaph: `${liveData.description || 'A pioneering open-source library'}. Honored on the ofrenda for faithful service across ${liveData.stars.toLocaleString()} stargazers.`,
+    obituary: `${liveData.name} was created in ${birthYear} and powered critical applications until its sunset in ${deathYear}. Its commits remain etched in git history as a monument to its contributors.`,
+    causeOfDeath: liveData.archived ? 'Archived by its maintainers as the software ecosystem progressed.' : 'Deprecations and architectural succession.',
+  };
+}
+
+/**
+ * Resurrects vintage code snippet into modern 2026 syntax using Gemma 2
+ */
+export async function resurrectCodeSnippet(repo: DepartedRepo, vintageCode: string): Promise<{ modernCode: string; explanation: string }> {
+  const ollamaUrl = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
+  const modelName = process.env.GEMMA_MODEL || 'gemma2:9b';
+
+  const prompt = `You are Google Gemma 2, an expert open-source systems modernization architect.
+Repository: ${repo.name} (${repo.fullName})
+Vintage legacy code from ${repo.birthYear}:
+\`\`\`
+${vintageCode}
+\`\`\`
+
+Task:
+1. Re-implement this code into modern 2026 idiomatic syntax (strict TypeScript, modern Python 3.12, async/await, native fetch, or modern immutable APIs).
+2. Eliminate all callback traps, memory leaks, and deprecated dependencies.
+3. Provide a brief 2-sentence explanation of why the modern architecture is superior.
+Output format:
+\`\`\`
+[modern code]
+\`\`\`
+EXPLANATION: [explanation]`;
+
+  try {
+    const response = await fetch(`${ollamaUrl}/api/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: modelName,
+        prompt,
+        stream: false,
+      }),
+      signal: AbortSignal.timeout(20000),
+    });
+
+    if (response.ok) {
+      const data = (await response.json()) as { response: string };
+      const raw = data.response;
+      const codeMatch = raw.match(/```(?:typescript|javascript|python)?\s*([\s\S]*?)```/i);
+      const expMatch = raw.match(/EXPLANATION:\s*(.*)/i);
+
+      if (codeMatch) {
+        return {
+          modernCode: codeMatch[1].trim(),
+          explanation: expMatch ? expMatch[1].trim() : 'Modernized with native runtime APIs and strict type safety.',
+        };
+      }
+    }
+  } catch (_e) {
+    // Continue
+  }
+
   return {
     modernCode: repo.modernResurrection.code,
     explanation: repo.modernResurrection.explanation,

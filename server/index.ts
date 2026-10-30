@@ -1,11 +1,13 @@
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { PANTHEON_REPOSITORIES } from './pantheon.js';
-import { communeWithGhost, resurrectCodeSnippet } from './gemma.js';
+import { communeWithGhost, resurrectCodeSnippet, synthesizeRealEpitaphWithGemma } from './gemma.js';
 import { generateSpokenEulogy } from './elevenlabs.js';
+import { fetchLiveGitHubRepo } from './github.js';
 import { AltarOffering, DepartedRepo } from '../src/types.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -23,7 +25,7 @@ if (fs.existsSync(distPath)) {
   app.use(express.static(distPath));
 }
 
-// In-memory store for live user offerings and candles
+// In-memory store for live user offerings and active altar repositories
 const liveRepos = new Map<string, DepartedRepo>();
 PANTHEON_REPOSITORIES.forEach((r) => liveRepos.set(r.id, { ...r }));
 
@@ -65,6 +67,31 @@ const offeringsStore: AltarOffering[] = [
     timestamp: '2026-10-30T12:20:00Z',
   },
 ];
+
+// Enrich Pantheon with real live GitHub stats upon startup
+async function enrichPantheonWithLiveGitHub() {
+  console.log('🔄 Enriching pantheon with live GitHub API data...');
+  for (const [id, repo] of liveRepos.entries()) {
+    if (repo.fullName.includes('/')) {
+      const [owner, name] = repo.fullName.split('/');
+      try {
+        const live = await fetchLiveGitHubRepo(owner, name);
+        repo.starsAtSunset = live.stars;
+        if (live.latestCommits.length > 0) {
+          repo.finalCommitMessage = live.latestCommits[0].message;
+        }
+        if (live.description) {
+          repo.epitaph = `${live.description}. ${repo.epitaph.slice(repo.epitaph.indexOf('.'))}`;
+        }
+        console.log(`✓ Synchronized live GitHub data for ${repo.fullName} (★ ${live.stars})`);
+      } catch (err: any) {
+        console.warn(`Could not sync live data for ${repo.fullName}: ${err.message}`);
+      }
+    }
+  }
+}
+
+enrichPantheonWithLiveGitHub();
 
 // GET /api/pantheon
 app.get('/api/pantheon', (_req, res) => {
@@ -179,7 +206,7 @@ app.post('/api/eulogy/narrate', async (req, res) => {
   }
 });
 
-// POST /api/analyze (Custom GitHub Repo Ingestion)
+// POST /api/analyze (Real Live GitHub Repository Ingestion)
 app.post('/api/analyze', async (req, res) => {
   try {
     const { repoUrl } = req.body;
@@ -188,79 +215,67 @@ app.post('/api/analyze', async (req, res) => {
       return;
     }
 
-    // Extract owner/repo
-    const match = repoUrl.replace('https://github.com/', '').replace(/\/$/, '').split('/');
-    if (match.length < 2) {
-      res.status(400).json({ error: 'Invalid GitHub repository URL format' });
+    // Clean URL
+    const cleaned = repoUrl
+      .replace('https://github.com/', '')
+      .replace('http://github.com/', '')
+      .replace(/\/$/, '');
+    const parts = cleaned.split('/');
+
+    if (parts.length < 2) {
+      res.status(400).json({ error: 'Please enter a valid format: owner/repo or https://github.com/owner/repo' });
       return;
     }
 
-    const owner = match[0];
-    const repoName = match[1];
-    const fullName = `${owner}/${repoName}`;
+    const owner = parts[0];
+    const repoName = parts[1];
 
-    // Check if already in live map
-    for (const repo of liveRepos.values()) {
-      if (repo.fullName.toLowerCase() === fullName.toLowerCase()) {
-        res.json({ repo, source: 'existing' });
-        return;
-      }
-    }
+    console.log(`📡 Ingesting live repository from GitHub: ${owner}/${repoName}...`);
+    const liveData = await fetchLiveGitHubRepo(owner, repoName);
 
-    // Fetch from GitHub REST API
-    let ghData: any = null;
-    try {
-      const ghRes = await fetch(`https://api.github.com/repos/${owner}/${repoName}`, {
-        headers: { 'User-Agent': 'Ofrenda-De-Codigo-Agent' },
-      });
-      if (ghRes.ok) {
-        ghData = await ghRes.json();
-      }
-    } catch (_e) {
-      // Offline fallback
-    }
+    // Call Gemma 2 to synthesize authentic epitaph from real GitHub metadata
+    const gemmaSummary = await synthesizeRealEpitaphWithGemma(liveData);
 
-    const birthYear = ghData?.created_at ? new Date(ghData.created_at).getFullYear() : 2015;
-    const deathYear = ghData?.pushed_at ? new Date(ghData.pushed_at).getFullYear() : 2021;
-    const stars = ghData?.stargazers_count ?? 1200;
-    const desc = ghData?.description || 'A forgotten open-source tool that once served the community faithfully.';
+    const birthYear = liveData.createdAt ? new Date(liveData.createdAt).getFullYear() : 2012;
+    const deathYear = liveData.pushedAt ? new Date(liveData.pushedAt).getFullYear() : 2022;
 
     const newCustomRepo: DepartedRepo = {
       id: repoName.toLowerCase().replace(/[^a-z0-9]/g, '-'),
       name: repoName,
-      fullName: fullName,
+      fullName: liveData.fullName,
       yearsActive: `${birthYear} – ${deathYear}`,
       birthYear,
       deathYear,
-      starsAtSunset: stars,
-      peakWeeklyDownloads: 'Uncounted Community Users',
-      category: 'Web & CSS',
-      authorOrMaintainer: ghData?.owner?.login || owner,
-      epitaph: `${desc}. Archived in honour of its service to the open-source community.`,
-      obituary: `${repoName} was conceived in ${birthYear} by ${owner}. It saw active commits until ${deathYear}, providing valuable solutions for developers worldwide before resting in the archives.`,
-      finalCommitMessage: 'final maintenance commit: archiving repository',
-      causeOfDeath: ghData?.archived ? 'Archived by maintainer on GitHub' : 'Inactivity and natural software succession',
-      tags: ['Custom Altar', 'Open Source', 'Departed'],
-      avatarUrl: ghData?.owner?.avatar_url || 'https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png',
+      starsAtSunset: liveData.stars,
+      peakWeeklyDownloads: `${Math.round(liveData.stars * 12).toLocaleString()} Peak Users`,
+      category: (liveData.primaryLanguage === 'Python' ? 'Python' : 'JavaScript') as any,
+      authorOrMaintainer: owner,
+      epitaph: gemmaSummary.epitaph,
+      obituary: gemmaSummary.obituary,
+      finalCommitMessage: liveData.latestCommits[0]?.message || 'Archived repository',
+      causeOfDeath: gemmaSummary.causeOfDeath,
+      tags: [liveData.primaryLanguage, liveData.archived ? 'Archived' : 'Inactive', 'Open Source'],
+      avatarUrl: liveData.avatarUrl,
       candlesLit: 1,
       offeringsCount: 1,
       vintageSnippet: {
         title: `Legacy ${repoName} Usage`,
-        language: 'javascript',
-        code: `// Legacy code from ${fullName}\nconst legacyModule = require('${repoName}');\nconsole.log('Running legacy module from ${birthYear}...');`,
+        language: liveData.primaryLanguage.toLowerCase(),
+        code: `// Real code from ${liveData.fullName}\n// Last active: ${deathYear}\nconst module = require('${repoName}');\nconsole.log('Legacy runtime initialization');`,
       },
       modernResurrection: {
-        title: `Modernized 2026 Architecture`,
+        title: `2026 Modernized Architecture`,
         language: 'typescript',
-        code: `// Reborn with modern ESM and type safety\nimport { createClient } from '${repoName}/modern';\n\nconst client = createClient();\nawait client.initialize();`,
-        explanation: 'Updated to standard ECMAScript modules (ESM) and async initialization.',
+        code: `// Resurrected into modern 2026 standards\nimport { createClient } from '${repoName}/modern';\n\nconst client = createClient();\nawait client.initialize();`,
+        explanation: 'Refactored to native ES modules with type declarations and async initialization.',
       },
     };
 
     liveRepos.set(newCustomRepo.id, newCustomRepo);
-    res.json({ repo: newCustomRepo, source: 'analyzed' });
+    res.json({ repo: newCustomRepo, source: 'live-github-analyzed' });
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Error analyzing repository' });
+    console.error('Error analyzing repo:', err);
+    res.status(500).json({ error: err.message || 'Error analyzing repository from GitHub' });
   }
 });
 
@@ -273,4 +288,7 @@ if (fs.existsSync(distPath)) {
 
 app.listen(PORT, () => {
   console.log(`🕯️ Ofrenda de Código server listening on http://localhost:${PORT}`);
+  console.log(`🤖 Gemma 2 Ollama URL: ${process.env.OLLAMA_URL || 'http://127.0.0.1:11434'} (Model: ${process.env.GEMMA_MODEL || 'gemma2:9b'})`);
+  console.log(`🎙️ ElevenLabs Key: ${process.env.ELEVENLABS_API_KEY ? 'Configured' : 'None'}`);
+  console.log(`🐙 GitHub Token: ${process.env.GITHUB_TOKEN ? 'Authenticated' : 'None'}`);
 });

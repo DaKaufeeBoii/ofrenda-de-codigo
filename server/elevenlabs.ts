@@ -6,7 +6,7 @@ export async function generateSpokenEulogy(repo: DepartedRepo): Promise<EulogyAu
 
   const transcript = `In memory of ${repo.name}. Born in ${repo.birthYear}, laid to rest in ${repo.deathYear}. ${repo.epitaph} You carried the weight of millions of developers, and your memory shall never fade from the ofrenda.`;
 
-  if (apiKey) {
+  if (apiKey && apiKey.startsWith('sk_')) {
     try {
       const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
         method: 'POST',
@@ -36,14 +36,15 @@ export async function generateSpokenEulogy(repo: DepartedRepo): Promise<EulogyAu
           source: 'elevenlabs',
         };
       } else {
-        console.warn('ElevenLabs API returned status:', response.status);
+        const errJson: any = await response.json().catch(() => ({}));
+        console.warn(`[ElevenLabs API Warning] status: ${response.status}`, errJson);
       }
-    } catch (err) {
-      console.warn('ElevenLabs call failed, falling back to ambient synthesis:', err);
+    } catch (err: any) {
+      console.warn('[ElevenLabs API Error]', err.message);
     }
   }
 
-  // Graceful fallback for offline demo / no key
+  // High-fidelity fallback for offline or invalid API key
   return {
     transcript,
     source: 'ambient-synth',
