@@ -419,6 +419,8 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
   } | null>(null);
 
   const [activeWhisper, setActiveWhisper] = useState<{ text: string; author: string; repo: string } | null>(null);
+  const activeWhisperRef = useRef<{ text: string; author: string; repo: string } | null>(null);
+  const wispDialogueRef = useRef<HTMLDivElement>(null);
   const [codexOpen, setCodexOpen] = useState(false);
   const [miniMapExpanded, setMiniMapExpanded] = useState(false);
   const [hudMessage, setHudMessage] = useState<string | null>('Explore the Cemetery of Departed Code. Honor the fallen.');
@@ -1219,11 +1221,19 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
       }
 
       // Update Graves, Rune Rings, and Orbiting Soul Wisps
-      let touchingWispText: { text: string; author: string; repo: string } | null = null;
+      let touchingWispText: {
+        text: string;
+        author: string;
+        repo: string;
+        worldX: number;
+        worldY: number;
+        worldZ: number;
+      } | null = null;
+      let minWispDist = activeWhisperRef.current ? 4.2 : 2.8;
       let closestPrompt: typeof activePrompt = null;
       let minDistance = Infinity;
 
-      graves3DRef.current.forEach((grave) => {
+      for (const grave of graves3DRef.current) {
         const dist = Math.hypot(p.x - grave.x, p.z - grave.z);
 
         // Rune Ring Glow when near
@@ -1241,24 +1251,37 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
         });
 
         // 3D Soul Wisps Orbiting
-        grave.wisps.forEach((w) => {
+        for (const w of grave.wisps) {
           w.angle += w.speed;
           w.mesh.position.x = Math.cos(w.angle) * w.radius;
           w.mesh.position.z = Math.sin(w.angle) * w.radius;
           w.mesh.position.y = 1.25 + Math.sin(elapsedTime * 2 + w.angle) * 0.25;
 
           const worldWispX = grave.x + w.mesh.position.x;
+          const worldWispY = w.mesh.position.y;
           const worldWispZ = grave.z + w.mesh.position.z;
           const wDist = Math.hypot(p.x - worldWispX, p.z - worldWispZ);
 
-          if (wDist < 1.0 && !touchingWispText) {
+          const isCurrentGrave = activeWhisperRef.current && activeWhisperRef.current.repo === grave.repo.name;
+          const maxAllowed = isCurrentGrave ? 4.2 : 2.8;
+
+          if (wDist < maxAllowed && wDist < minWispDist) {
+            minWispDist = wDist;
             touchingWispText = {
               text: w.prayer,
               author: w.author,
               repo: grave.repo.name,
+              worldX: worldWispX,
+              worldY: worldWispY + 0.35,
+              worldZ: worldWispZ,
             };
+            (w.mesh.material as THREE.MeshStandardMaterial).emissiveIntensity = 2.0;
+            w.mesh.scale.setScalar(1.25);
+          } else {
+            (w.mesh.material as THREE.MeshStandardMaterial).emissiveIntensity = 0.95;
+            w.mesh.scale.setScalar(1.0);
           }
-        });
+        }
 
         // Check Grave Proximity for RPG Action Banner
         if (dist < 2.8 && dist < minDistance) {
@@ -1283,7 +1306,7 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
             secondaryText: '[R] Resurrect',
           };
         }
-      });
+      }
 
       // Check Central Altar Proximity (0, 0)
       const distToAltar = Math.hypot(p.x - 0, p.z - 0);
@@ -1328,8 +1351,46 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
       }
 
       setActivePrompt(closestPrompt);
+
+      // Track & project Soul Whisper dialogue balloon directly above the soul wisp in 3D
       if (touchingWispText) {
-        setActiveWhisper(touchingWispText);
+        if (!activeWhisperRef.current || activeWhisperRef.current.text !== touchingWispText.text) {
+          activeWhisperRef.current = {
+            text: touchingWispText.text,
+            author: touchingWispText.author,
+            repo: touchingWispText.repo,
+          };
+          setActiveWhisper(activeWhisperRef.current);
+        }
+
+        if (wispDialogueRef.current && mountRef.current) {
+          const w = mountRef.current.clientWidth;
+          const h = mountRef.current.clientHeight;
+
+          const wispVec = new THREE.Vector3(
+            touchingWispText.worldX,
+            touchingWispText.worldY,
+            touchingWispText.worldZ
+          );
+          wispVec.project(camera);
+
+          // Only display if in front of camera
+          if (wispVec.z < 1) {
+            const screenX = ((wispVec.x + 1) * w) / 2;
+            const screenY = ((-wispVec.y + 1) * h) / 2;
+
+            wispDialogueRef.current.style.transform = `translate3d(${screenX}px, ${screenY}px, 0)`;
+            wispDialogueRef.current.style.opacity = '1';
+          }
+        }
+      } else {
+        if (activeWhisperRef.current) {
+          activeWhisperRef.current = null;
+          setActiveWhisper(null);
+        }
+        if (wispDialogueRef.current) {
+          wispDialogueRef.current.style.opacity = '0';
+        }
       }
 
       // 3D Drifting Marigold Petals Physics
@@ -1677,31 +1738,46 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
         </div>
       )}
 
-      {/* FLOATING SOUL WISP PRAYER WHISPER */}
-      {activeWhisper && (
-        <div className="absolute top-28 left-1/2 -translate-x-1/2 z-30 max-w-lg w-full px-4 animate-fade-in pointer-events-auto">
-          <div className="p-4 rounded-3xl bg-purple-950/95 backdrop-blur-xl border border-purple-500/60 shadow-[0_0_35px_rgba(168,85,247,0.5)] flex items-start space-x-3.5 text-left">
-            <span className="text-3xl animate-pulse">✨</span>
-            <div className="flex-1">
-              <div className="flex items-center justify-between text-[11px] font-mono text-purple-300 mb-1">
-                <span>Soul Whisper at {activeWhisper.repo}'s Grave</span>
-                <button
-                  onClick={() => setActiveWhisper(null)}
-                  className="text-purple-400/60 hover:text-purple-200 font-bold px-1"
-                >
-                  ✕
-                </button>
+      {/* IN-WORLD SOUL SPEECH BALLOON POPPING UP DIRECTLY FROM THE SOUL WISP */}
+      <div
+        ref={wispDialogueRef}
+        className="absolute top-0 left-0 pointer-events-none z-30 transition-opacity duration-200 will-change-transform opacity-0"
+      >
+        {activeWhisper && (
+          <div className="relative -translate-x-1/2 -translate-y-full mb-3.5 pointer-events-auto">
+            {/* Ethereal Dialogue Speech Bubble */}
+            <div className="relative max-w-xs sm:max-w-sm px-4 py-3 rounded-2xl bg-[#18092e]/95 backdrop-blur-xl border border-purple-400/70 shadow-[0_0_35px_rgba(168,85,247,0.65),0_12px_24px_rgba(0,0,0,0.85)] text-left select-none animate-in fade-in zoom-in-95 duration-200">
+              
+              {/* Glow Ambient Accent */}
+              <div className="absolute inset-0 rounded-2xl bg-gradient-to-b from-purple-500/10 via-transparent to-pink-500/10 pointer-events-none" />
+
+              {/* Header */}
+              <div className="flex items-center justify-between text-[10px] font-mono text-purple-300 mb-1 border-b border-purple-800/40 pb-1">
+                <span className="flex items-center space-x-1">
+                  <span className="text-amber-400 text-xs animate-pulse">✨</span>
+                  <span className="font-bold text-amber-200 uppercase tracking-wider">{activeWhisper.repo}</span>
+                </span>
+                <span className="text-[9px] text-purple-400/80 font-mono">Soul Whisper</span>
               </div>
-              <p className="text-xs font-serif italic text-purple-100 leading-relaxed">
+
+              {/* Devotee Prayer Message */}
+              <p className="text-xs font-serif italic text-purple-100 leading-relaxed my-1 drop-shadow-sm">
                 "{activeWhisper.text}"
               </p>
-              <span className="block text-[10px] font-mono text-purple-400/80 mt-1.5">
-                — Devotee {activeWhisper.author}
-              </span>
+
+              {/* Devotee Author */}
+              <div className="flex items-center justify-between text-[10px] font-mono text-purple-300/80 mt-1.5 pt-1 border-t border-purple-800/30">
+                <span className="text-purple-300 font-semibold">— {activeWhisper.author}</span>
+                <span className="text-[9px] text-purple-400/60 font-mono">Devotee Prayer</span>
+              </div>
+
+              {/* Speech Bubble Downward Caret Tail pointing straight down to the soul orb */}
+              <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[8px] border-l-transparent border-r-[8px] border-r-transparent border-t-[8px] border-t-[#18092e]" />
+              <div className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[9px] border-l-transparent border-r-[9px] border-r-transparent border-t-[9px] border-t-purple-400/70 -z-10" />
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* BOTTOM CENTER: SOULS-LIKE IN-WORLD ACTION BANNER */}
       {activePrompt && (
