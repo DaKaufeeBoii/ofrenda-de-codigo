@@ -22,6 +22,25 @@ export interface LiveGitHubData {
   avatarUrl: string;
 }
 
+/**
+ * Strips raw git trailers, Co-authored-by tags, PR numbers (#123), and newlines
+ */
+export function sanitizeCommitMessage(rawMessage: string): string {
+  if (!rawMessage) return 'Archived repository';
+  
+  // Take first line only (the subject line)
+  const firstLine = rawMessage.split('\n')[0].trim();
+  
+  // Clean up PR references (#123) and commit metadata
+  const cleaned = firstLine
+    .replace(/\s*\(\#[0-9]+\)/g, '')
+    .replace(/^Merge pull request.*$/i, 'Final merge before sunset')
+    .replace(/^Co-authored-by:.*$/gim, '')
+    .trim();
+
+  return cleaned || 'Maintained with dedication until final sunset';
+}
+
 export async function fetchLiveGitHubRepo(owner: string, repo: string): Promise<LiveGitHubData> {
   const token = process.env.GITHUB_TOKEN;
   const headers: Record<string, string> = {
@@ -48,8 +67,8 @@ export async function fetchLiveGitHubRepo(owner: string, repo: string): Promise<
       const commitsJson: any = await commitsRes.json();
       latestCommits = commitsJson.map((c: any) => ({
         sha: c.sha.substring(0, 7),
-        message: c.commit.message,
-        author: c.commit.author?.name || c.author?.login || 'Unknown Maintainer',
+        message: sanitizeCommitMessage(c.commit.message),
+        author: c.commit.author?.name || c.author?.login || 'Maintainer',
         date: c.commit.author?.date || c.commit.committer?.date || '',
       }));
     }
@@ -76,7 +95,7 @@ export async function fetchLiveGitHubRepo(owner: string, repo: string): Promise<
       const readmeJson: any = await readmeRes.json();
       if (readmeJson.content) {
         const decoded = Buffer.from(readmeJson.content, 'base64').toString('utf-8');
-        readmeSnippet = decoded.slice(0, 1500); // First 1500 characters of real README
+        readmeSnippet = decoded.slice(0, 1500);
       }
     }
   } catch (_e) {
