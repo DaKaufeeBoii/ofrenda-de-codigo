@@ -3,17 +3,14 @@ services:
     name: ofrenda-de-codigo
     runtime: node
     plan: free
-    region: oregon
     buildCommand: npm install && npm run build
-    startCommand: npm run server
+    startCommand: npm run start
     envVars:
       - key: NODE_ENV
         value: production
-      - key: PORT
-        value: 3001
-      - key: GEMMA_MODEL
-        value: gemma2:9b
+      - key: GITHUB_TOKEN
+        sync: false
       - key: ELEVENLABS_API_KEY
         sync: false
-      - key: GEMMA_API_KEY
+      - key: ELEVENLABS_VOICE_ID
         sync: false
