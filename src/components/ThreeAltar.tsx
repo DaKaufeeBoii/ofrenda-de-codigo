@@ -45,7 +45,7 @@ export const ThreeAltar: React.FC<ThreeAltarProps> = ({
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.2;
 
@@ -203,12 +203,12 @@ export const ThreeAltar: React.FC<ThreeAltarProps> = ({
     window.addEventListener('mousemove', handleMouseMove);
 
     // 7. Animation Loop
-    let clock = new THREE.Clock();
+    const startTime = performance.now();
     let animId: number;
 
     const animate = () => {
       animId = requestAnimationFrame(animate);
-      const elapsedTime = clock.getElapsedTime();
+      const elapsedTime = (performance.now() - startTime) * 0.001;
 
       // Smooth camera interpolation
       camera.position.x += (targetCameraX - camera.position.x) * 0.05;
@@ -300,6 +300,7 @@ export const ThreeAltar: React.FC<ThreeAltarProps> = ({
         mountRef.current.removeChild(renderer.domElement);
       }
       renderer.dispose();
+      renderer.forceContextLoss();
     };
   }, []);
 

@@ -47,12 +47,28 @@ interface Grave3D {
   }[];
 }
 
+// Shared singleton WebAudio context to prevent browser context exhaustion
+let sharedAudioCtx: AudioContext | null = null;
+const getSharedAudioCtx = (): AudioContext | null => {
+  try {
+    if (!sharedAudioCtx) {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (AudioCtx) sharedAudioCtx = new AudioCtx();
+    }
+    if (sharedAudioCtx && sharedAudioCtx.state === 'suspended') {
+      sharedAudioCtx.resume().catch(() => {});
+    }
+    return sharedAudioCtx;
+  } catch (_e) {
+    return null;
+  }
+};
+
 // Procedural Web Audio Sound Generator for zero-latency game SFX
 const playProceduralSFX = (type: 'step' | 'candle' | 'petal' | 'gong' | 'dash') => {
   try {
-    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-    if (!AudioCtx) return;
-    const ctx = new AudioCtx();
+    const ctx = getSharedAudioCtx();
+    if (!ctx || ctx.state !== 'running') return;
 
     if (type === 'step') {
       const osc = ctx.createOscillator();
@@ -173,6 +189,27 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
   const [miniMapExpanded, setMiniMapExpanded] = useState(false);
   const [hudMessage, setHudMessage] = useState<string | null>('Explore the Cemetery of Departed Code. Honor the fallen.');
   const [totalCandles, setTotalCandles] = useState<number>(0);
+
+  // References to props and callbacks for single-mount WebGL stability
+  const reposRef = useRef(repos);
+  reposRef.current = repos;
+  const offeringsRef = useRef(offerings);
+  offeringsRef.current = offerings;
+
+  const callbacksRef = useRef({
+    onOpenContract,
+    onOpen3DAltar,
+    onOpenOfferingsWall,
+    onOpenSummonModal,
+    onOpenOfferingModal,
+  });
+  callbacksRef.current = {
+    onOpenContract,
+    onOpen3DAltar,
+    onOpenOfferingsWall,
+    onOpenSummonModal,
+    onOpenOfferingModal,
+  };
 
   // Three.js Scene References
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -563,7 +600,16 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
     // 10. 3D TOMBSTONES & ETHEREAL RUNE RINGS FOR EACH REPO
     const graves3D: Grave3D[] = [];
 
-    repos.forEach((repo, idx) => {
+    const initialRepos = reposRef.current.length > 0 ? reposRef.current : [
+      { id: 'request', name: 'request', yearsActive: '2011 – 2020', candlesLit: 1428, starsAtSunset: 25485 } as DepartedRepo,
+      { id: 'moment', name: 'moment.js', yearsActive: '2011 – 2020', candlesLit: 2154, starsAtSunset: 47885 } as DepartedRepo,
+      { id: 'urllib2', name: 'urllib2 (Python 2)', yearsActive: '2001 – 2020', candlesLit: 1890, starsAtSunset: 77707 } as DepartedRepo,
+      { id: 'coffeescript', name: 'CoffeeScript', yearsActive: '2009 – 2018', candlesLit: 3120, starsAtSunset: 16597 } as DepartedRepo,
+      { id: 'bower', name: 'bower', yearsActive: '2012 – 2017', candlesLit: 984, starsAtSunset: 14896 } as DepartedRepo,
+      { id: 'enzyme', name: 'enzyme', yearsActive: '2015 – 2021', candlesLit: 875, starsAtSunset: 19803 } as DepartedRepo,
+    ];
+
+    initialRepos.forEach((repo, idx) => {
       const pos = GRAVE_COORDS[idx] || {
         x: ((idx * 5) % 18) - 9,
         z: Math.floor(idx / 4) * 6 - 8,
@@ -631,7 +677,7 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
 
       // 3D Floating Soul Wisps (Orbiting Grave)
       const wisps: Grave3D['wisps'] = [];
-      const graveOfferings = offerings.filter((o) => o.repoId === repo.id);
+      const graveOfferings = offeringsRef.current.filter((o) => o.repoId === repo.id);
       const prayerCount = Math.max(1, Math.min(3, graveOfferings.length || 1));
 
       const wispGeo = new THREE.SphereGeometry(0.12, 16, 16);
@@ -865,13 +911,13 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
     renderer.domElement.addEventListener('pointerdown', handlePointerDown);
 
     // 15. Game Loop & Natural Kinematics Physics
-    let clock = new THREE.Clock();
+    const startTime = performance.now();
     let animId: number;
     let trailIndex = 0;
 
     const animate = () => {
       animId = requestAnimationFrame(animate);
-      const elapsedTime = clock.getElapsedTime();
+      const elapsedTime = (performance.now() - startTime) * 0.001;
       const p = playerState.current;
       const keys = keysPressed.current;
 
@@ -1064,13 +1110,13 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
               keysPressed.current = {};
               p.vx = 0; p.vz = 0; p.isMoving = false;
               p.targetRotation = Math.atan2(grave.x - p.x, grave.z - p.z);
-              onOpenContract(grave.repo, 'seance');
+              callbacksRef.current.onOpenContract(grave.repo, 'seance');
             },
             secondaryAction: () => {
               keysPressed.current = {};
               p.vx = 0; p.vz = 0; p.isMoving = false;
               p.targetRotation = Math.atan2(grave.x - p.x, grave.z - p.z);
-              onOpenContract(grave.repo, 'resurrection');
+              callbacksRef.current.onOpenContract(grave.repo, 'resurrection');
             },
             secondaryText: '[R] Resurrect',
           };
@@ -1083,14 +1129,14 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
         minDistance = distToAltar;
         closestPrompt = {
           type: 'altar',
-          targetRepo: repos[0],
+          targetRepo: reposRef.current[0],
           text: `[E] Enter 3D Candle Sanctuary`,
           subtext: `Light candles on the stone pedestal and listen to cathedral eulogies`,
           action: () => {
             keysPressed.current = {};
             p.vx = 0; p.vz = 0; p.isMoving = false;
             p.targetRotation = Math.atan2(0 - p.x, 0 - p.z);
-            if (repos.length > 0) onOpen3DAltar(repos[0]);
+            if (reposRef.current.length > 0) callbacksRef.current.onOpen3DAltar(reposRef.current[0]);
           },
         };
       }
@@ -1103,7 +1149,7 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
           type: 'wall',
           text: `[E] Inspect Devotee Memorial Wall`,
           subtext: `Read community developer prayers or place your offering into the cemetery`,
-          action: onOpenOfferingsWall,
+          action: () => callbacksRef.current.onOpenOfferingsWall(),
         };
       }
 
@@ -1115,7 +1161,7 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
           type: 'gate',
           text: `[E] Summon a Grave from GitHub`,
           subtext: `Paste any GitHub repo URL to erect a new 3D tombstone in the cemetery`,
-          action: onOpenSummonModal,
+          action: () => callbacksRef.current.onOpenSummonModal(),
         };
       }
 
@@ -1276,8 +1322,20 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
         mountRef.current.removeChild(renderer.domElement);
       }
       renderer.dispose();
+      renderer.forceContextLoss();
     };
-  }, [repos, offerings, onOpenContract, onOpen3DAltar, onOpenOfferingsWall, onOpenSummonModal]);
+  }, []);
+
+  // Synchronize live repository stats without tearing down WebGL renderer context
+  useEffect(() => {
+    if (repos.length === 0) return;
+    graves3DRef.current.forEach((grave, idx) => {
+      const matching = repos.find((r) => r.id === grave.repo.id) || repos[idx];
+      if (matching) {
+        grave.repo = matching;
+      }
+    });
+  }, [repos, offerings]);
 
   return (
     <div className="relative w-full h-screen overflow-hidden select-none bg-[#080512]">
