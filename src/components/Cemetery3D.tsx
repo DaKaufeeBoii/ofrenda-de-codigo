@@ -29,8 +29,51 @@ interface Cemetery3DProps {
   onOpenOfferingsWall: () => void;
   onOpenSummonModal: () => void;
   onOpenOfferingModal: (repo: DepartedRepo) => void;
+  onLightCandle?: (repoId: string) => void;
   ambientSound: boolean;
   onToggleSound: () => void;
+}
+
+// Devotion Tiers for Departed Repositories
+export function getDevotionTier(candlesLit: number = 0) {
+  if (candlesLit >= 100) {
+    return {
+      tier: 'Tier IV: Immortalized Pantheon',
+      title: 'Immortalized Spirit',
+      color: 'text-amber-300',
+      border: 'border-amber-400',
+      badge: '🌟 IMMORTAL',
+      lore: 'Eternally preserved in the Great Pantheon',
+    };
+  }
+  if (candlesLit >= 50) {
+    return {
+      tier: 'Tier III: Revered Spirit',
+      title: 'Revered Spirit',
+      color: 'text-purple-300',
+      border: 'border-purple-400',
+      badge: '✨ REVERED',
+      lore: 'Basked in the sacred violet aura of community devotion',
+    };
+  }
+  if (candlesLit >= 10) {
+    return {
+      tier: 'Tier II: Honored Spirit',
+      title: 'Honored Spirit',
+      color: 'text-rose-300',
+      border: 'border-rose-400',
+      badge: '🕯️ HONORED',
+      lore: 'Awakened by faithful developer offerings',
+    };
+  }
+  return {
+    tier: 'Tier I: Slumbering Spirit',
+    title: 'Slumbering Spirit',
+    color: 'text-slate-300',
+    border: 'border-slate-500',
+    badge: '🪦 REMEMBERED',
+    lore: 'Resting in peace until rekindled',
+  };
 }
 
 interface Grave3D {
@@ -68,7 +111,7 @@ const getSharedAudioCtx = (): AudioContext | null => {
 };
 
 // Procedural Web Audio Sound Generator for zero-latency game SFX
-const playProceduralSFX = (type: 'step' | 'candle' | 'petal' | 'gong' | 'dash') => {
+const playProceduralSFX = (type: 'step' | 'candle' | 'petal' | 'gong' | 'dash' | 'ignite') => {
   try {
     const ctx = getSharedAudioCtx();
     if (!ctx || ctx.state !== 'running') return;
@@ -84,6 +127,55 @@ const playProceduralSFX = (type: 'step' | 'candle' | 'petal' | 'gong' | 'dash') 
       gain.connect(ctx.destination);
       osc.start();
       osc.stop(ctx.currentTime + 0.08);
+    } else if (type === 'ignite') {
+      // 1. Match strike scratch burst (filtered noise)
+      const bufferSize = Math.floor(ctx.sampleRate * 0.06);
+      const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.25));
+      }
+      const noise = ctx.createBufferSource();
+      noise.buffer = buffer;
+      const noiseFilter = ctx.createBiquadFilter();
+      noiseFilter.type = 'bandpass';
+      noiseFilter.frequency.setValueAtTime(2600, ctx.currentTime);
+      const noiseGain = ctx.createGain();
+      noiseGain.gain.setValueAtTime(0.09, ctx.currentTime);
+      noise.connect(noiseFilter);
+      noiseFilter.connect(noiseGain);
+      noiseGain.connect(ctx.destination);
+      noise.start();
+
+      // 2. Warm flame whoosh & ignition flare
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(140, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(420, ctx.currentTime + 0.12);
+      osc.frequency.exponentialRampToValueAtTime(220, ctx.currentTime + 0.45);
+
+      gain.gain.setValueAtTime(0.01, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(0.09, ctx.currentTime + 0.08);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.5);
+
+      // 3. Shimmering high harmonic bell
+      const chime = ctx.createOscillator();
+      const chimeGain = ctx.createGain();
+      chime.type = 'sine';
+      chime.frequency.setValueAtTime(880, ctx.currentTime + 0.05);
+      chime.frequency.exponentialRampToValueAtTime(1320, ctx.currentTime + 0.35);
+      chimeGain.gain.setValueAtTime(0.03, ctx.currentTime + 0.05);
+      chimeGain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.45);
+      chime.connect(chimeGain);
+      chimeGain.connect(ctx.destination);
+      chime.start(ctx.currentTime + 0.05);
+      chime.stop(ctx.currentTime + 0.45);
     } else if (type === 'candle') {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
@@ -404,6 +496,7 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
   onOpenOfferingsWall,
   onOpenSummonModal,
   onOpenOfferingModal,
+  onLightCandle,
   ambientSound,
   onToggleSound,
 }) => {
@@ -441,6 +534,9 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
     inspectGrave: null as Grave3D | null,
   });
 
+  // 3D Candle Ignition Sparks System
+  const triggerCandleSparksRef = useRef<(x: number, y: number, z: number) => void>(() => {});
+
   // References to props and callbacks for single-mount WebGL stability
   const reposRef = useRef(repos);
   reposRef.current = repos;
@@ -453,6 +549,7 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
     onOpenOfferingsWall,
     onOpenSummonModal,
     onOpenOfferingModal,
+    onLightCandle,
   });
   callbacksRef.current = {
     onOpenContract,
@@ -460,6 +557,7 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
     onOpenOfferingsWall,
     onOpenSummonModal,
     onOpenOfferingModal,
+    onLightCandle,
   };
 
   // Three.js Scene References
@@ -541,15 +639,84 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
     setTimeout(() => setHudMessage(null), 3000);
   }, []);
 
-  // Hotbar Action 2: Kindle Candle
+  // Hotbar Action 2: In-World Candle Lighting Rite with 3D Sparks & Devotion Tiers
   const handleKindleAction = useCallback(() => {
-    if (activePrompt?.targetRepo) {
-      playProceduralSFX('candle');
-      onOpenOfferingModal(activePrompt.targetRepo);
-    } else {
-      if (repos.length > 0) onOpen3DAltar(repos[0]);
+    const p = playerState.current;
+    const cam = cameraState.current;
+    let targetGrave: Grave3D | null = null;
+
+    // Check if inspecting a tombstone first
+    if (cam.isInspecting && cam.inspectGrave) {
+      targetGrave = cam.inspectGrave;
+    } else if (activePrompt?.targetRepo) {
+      targetGrave = graves3DRef.current.find((g) => g.repo.id === activePrompt.targetRepo?.id) || null;
     }
-  }, [activePrompt, repos, onOpenOfferingModal, onOpen3DAltar]);
+
+    // If still not found, search for nearest grave within 3.8 units
+    if (!targetGrave) {
+      let minDist = 3.8;
+      for (const g of graves3DRef.current) {
+        const d = Math.hypot(p.x - g.x, p.z - g.z);
+        if (d < minDist) {
+          minDist = d;
+          targetGrave = g;
+        }
+      }
+    }
+
+    if (targetGrave) {
+      const repo = targetGrave.repo;
+      playProceduralSFX('ignite');
+
+      // 3D Ascending Particle Sparks erupting from the grave candle base
+      triggerCandleSparksRef.current(targetGrave.x, 0.45, targetGrave.z + 0.38);
+
+      // Increment candle devotion count locally
+      repo.candlesLit = (repo.candlesLit || 0) + 1;
+      setTotalCandles((prev) => prev + 1);
+
+      // Dynamically intensify point lights around the grave to reflect glowing devotion
+      for (const light of targetGrave.candleLights) {
+        light.intensity = Math.min(3.8, light.intensity + 0.35);
+        light.distance = Math.min(6.5, light.distance + 0.3);
+      }
+
+      // Devotion Tier notification
+      const devotion = getDevotionTier(repo.candlesLit);
+      setHudMessage(`🕯️ Sacred Candle Kindled! ${repo.candlesLit} Candles Honored for "${repo.name}" (${devotion.tier})`);
+      setTimeout(() => setHudMessage(null), 4500);
+
+      // Persist to server
+      if (callbacksRef.current.onLightCandle) {
+        callbacksRef.current.onLightCandle(repo.id);
+      } else {
+        fetch('/api/altar/candle', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ repoId: repo.id }),
+        }).catch(() => {});
+      }
+      return;
+    }
+
+    // Check if near Central Altar Sanctuary (0, 0)
+    const distToAltar = Math.hypot(p.x, p.z);
+    if (distToAltar < 4.0) {
+      playProceduralSFX('ignite');
+      triggerCandleSparksRef.current(0, 1.2, 0);
+      setTotalCandles((prev) => prev + 1);
+      setHudMessage('🕯️ Sacred Candle kindled upon the Central Altar Sanctuary!');
+      setTimeout(() => setHudMessage(null), 3500);
+      if (reposRef.current.length > 0 && callbacksRef.current.onLightCandle) {
+        callbacksRef.current.onLightCandle(reposRef.current[0].id);
+      }
+      return;
+    }
+
+    // If standing away from shrines
+    setHudMessage('Approach a tombstone or the central altar to kindle a sacred candle [Key 2]');
+    setTimeout(() => setHudMessage(null), 3000);
+  }, [activePrompt]);
 
   // Dynamic Camera Zoom Controls
   const handleZoomIn = useCallback(() => {
@@ -575,7 +742,8 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
       setTimeout(() => setHudMessage(null), 2500);
     } else {
       let target = repo || activePrompt?.targetRepo;
-      let grave3D = target ? graves3DRef.current.find((g) => g.repo.id === target.id) : null;
+      const targetId = target?.id;
+      let grave3D = targetId ? graves3DRef.current.find((g) => g.repo.id === targetId) : null;
 
       // If no target specified, inspect the nearest grave within 4.5 units
       if (!grave3D) {
@@ -1128,6 +1296,53 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
     }
     footstepTrailRef.current = footstepTrail;
 
+    // 13b. Candle Ignition Sparks Particle Pool (40 ascending golden embers)
+    const sparksPoolSize = 40;
+    const sparkGeo = new THREE.SphereGeometry(0.045, 6, 6);
+    const sparkMat = new THREE.MeshBasicMaterial({
+      color: 0xffb703,
+      transparent: true,
+      opacity: 0,
+    });
+
+    const sparksPool: {
+      mesh: THREE.Mesh;
+      vx: number;
+      vy: number;
+      vz: number;
+      life: number;
+      maxLife: number;
+    }[] = [];
+
+    for (let i = 0; i < sparksPoolSize; i++) {
+      const mesh = new THREE.Mesh(sparkGeo, sparkMat.clone());
+      mesh.visible = false;
+      scene.add(mesh);
+      sparksPool.push({ mesh, vx: 0, vy: 0, vz: 0, life: 0, maxLife: 40 });
+    }
+
+    triggerCandleSparksRef.current = (sx: number, sy: number, sz: number) => {
+      let count = 0;
+      for (const sp of sparksPool) {
+        if (sp.life <= 0) {
+          sp.mesh.position.set(
+            sx + (Math.random() - 0.5) * 0.25,
+            sy + (Math.random() - 0.5) * 0.08,
+            sz + (Math.random() - 0.5) * 0.25
+          );
+          sp.vx = (Math.random() - 0.5) * 0.045;
+          sp.vy = 0.04 + Math.random() * 0.06;
+          sp.vz = (Math.random() - 0.5) * 0.045;
+          sp.life = 35 + Math.floor(Math.random() * 25);
+          sp.maxLife = sp.life;
+          sp.mesh.visible = true;
+          (sp.mesh.material as THREE.MeshBasicMaterial).opacity = 1.0;
+          count++;
+          if (count >= 24) break;
+        }
+      }
+    };
+
     // 14. Mouse Raycasting for Smooth Click-to-Pathfind
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
@@ -1299,6 +1514,21 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
           (t.mesh.material as THREE.MeshBasicMaterial).opacity = ratio * 0.45;
           t.mesh.scale.setScalar(1 + (1 - ratio) * 0.5);
           if (t.life <= 0) t.mesh.visible = false;
+        }
+      });
+
+      // Update Candle Ignition Sparks Particles
+      sparksPool.forEach((sp) => {
+        if (sp.mesh.visible && sp.life > 0) {
+          sp.life--;
+          sp.mesh.position.x += sp.vx;
+          sp.mesh.position.y += sp.vy;
+          sp.mesh.position.z += sp.vz;
+          sp.vy -= 0.0008; // slow air friction
+          const ratio = sp.life / sp.maxLife;
+          (sp.mesh.material as THREE.MeshBasicMaterial).opacity = ratio;
+          sp.mesh.scale.setScalar(0.4 + ratio * 0.8);
+          if (sp.life <= 0) sp.mesh.visible = false;
         }
       });
 
@@ -1659,6 +1889,11 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
       renderer.domElement.removeEventListener('wheel', handleWheel);
       window.removeEventListener('resize', handleResize);
       cancelAnimationFrame(animId);
+      sparksPool.forEach((sp) => {
+        scene.remove(sp.mesh);
+        sp.mesh.geometry.dispose();
+        (sp.mesh.material as THREE.Material).dispose();
+      });
       if (mountRef.current && renderer.domElement) {
         mountRef.current.removeChild(renderer.domElement);
       }
@@ -2117,8 +2352,11 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
                       <p className="text-xs font-mono text-purple-300/80 mt-1 line-clamp-2">
                         {repo.epitaph}
                       </p>
-                      <div className="mt-2 text-[11px] font-mono text-amber-300/80">
-                        ★ {repo.starsAtSunset.toLocaleString()} Stars • 🕯️ {repo.candlesLit} Candles
+                      <div className="mt-2 flex items-center justify-between text-[11px] font-mono text-amber-300/80">
+                        <span>★ {repo.starsAtSunset.toLocaleString()} Stars • 🕯️ {repo.candlesLit} Candles</span>
+                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${getDevotionTier(repo.candlesLit).border} ${getDevotionTier(repo.candlesLit).color}`}>
+                          {getDevotionTier(repo.candlesLit).badge}
+                        </span>
                       </div>
                     </div>
 
@@ -2185,11 +2423,14 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
                     </h3>
                   </div>
                   <p className="text-xs font-mono text-purple-300 mt-0.5">
-                    Resting since {inspectingGrave.yearsActive} • Chiseled Stone Epitaph
+                    Resting since {inspectingGrave.yearsActive} • {getDevotionTier(inspectingGrave.candlesLit).tier}
                   </p>
                 </div>
 
                 <div className="flex items-center space-x-2 font-mono text-xs">
+                  <span className={`px-2.5 py-1 rounded-lg bg-obsidian-950/80 border ${getDevotionTier(inspectingGrave.candlesLit).border} ${getDevotionTier(inspectingGrave.candlesLit).color} font-bold`}>
+                    {getDevotionTier(inspectingGrave.candlesLit).badge}
+                  </span>
                   <span className="px-2.5 py-1 rounded-lg bg-amber-950/60 border border-amber-500/40 text-amber-300">
                     ★ {inspectingGrave.starsAtSunset.toLocaleString()} Stars
                   </span>
@@ -2207,7 +2448,14 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
               </div>
 
               {/* Action Buttons */}
-              <div className="flex items-center justify-between pt-1 gap-3">
+              <div className="flex items-center justify-between pt-1 gap-2 sm:gap-3 flex-wrap sm:flex-nowrap">
+                <button
+                  onClick={handleKindleAction}
+                  className="px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-obsidian-950 font-mono text-xs font-bold shadow-lg transition-all active:scale-95"
+                >
+                  <span>🕯️ Kindle [2]</span>
+                </button>
+
                 <button
                   onClick={() => {
                     toggleInspectGrave();

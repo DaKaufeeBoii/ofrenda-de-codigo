@@ -154,6 +154,7 @@ export const App: React.FC = () => {
         onOpenOfferingsWall={() => setIsOfferingsWallOpen(true)}
         onOpenSummonModal={() => setIsCustomModalOpen(true)}
         onOpenOfferingModal={handleOpenOfferingModal}
+        onLightCandle={handleLightCandle}
         ambientSound={ambientSound}
         onToggleSound={toggleAmbientSound}
       />
