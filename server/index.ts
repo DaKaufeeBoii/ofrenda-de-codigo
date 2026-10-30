@@ -6,7 +6,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { PANTHEON_REPOSITORIES } from './pantheon.js';
 import { communeWithGhost, resurrectCodeSnippet, synthesizeRealEpitaphWithGemma } from './gemma.js';
-import { generateSpokenEulogy } from './elevenlabs.js';
+import { generateSpokenEulogy, generateWhisperAudio } from './elevenlabs.js';
 import { fetchLiveGitHubRepo } from './github.js';
 import { AltarOffering, DepartedRepo } from '../src/types.js';
 
@@ -203,6 +203,21 @@ app.post('/api/eulogy/narrate', async (req, res) => {
     res.json(eulogy);
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Error generating eulogy audio' });
+  }
+});
+
+// POST /api/altar/whisper (Spatial Proximity Ghost Whisper Audio)
+app.post('/api/altar/whisper', async (req, res) => {
+  try {
+    const { text, repoName } = req.body;
+    if (!text) {
+      res.status(400).json({ error: 'text is required' });
+      return;
+    }
+    const result = await generateWhisperAudio(text, repoName);
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Error generating whisper audio' });
   }
 });
 

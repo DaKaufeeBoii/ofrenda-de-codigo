@@ -94,6 +94,16 @@ interface Grave3D {
   }[];
 }
 
+interface SpatialWhisperState {
+  audio: HTMLAudioElement | null;
+  gainNode: GainNode | null;
+  pannerNode: StereoPannerNode | null;
+  currentText: string | null;
+  targetX: number;
+  targetZ: number;
+  isPlaying: boolean;
+}
+
 // Shared singleton WebAudio context to prevent browser context exhaustion
 let sharedAudioCtx: AudioContext | null = null;
 const getSharedAudioCtx = (): AudioContext | null => {
@@ -700,6 +710,89 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
 
   // 3D Candle Ignition Sparks System
   const triggerCandleSparksRef = useRef<(x: number, y: number, z: number) => void>(() => {});
+
+  // Spatial Proximity Ghost Whisper Audio System
+  const spatialWhisperRef = useRef<SpatialWhisperState>({
+    audio: null,
+    gainNode: null,
+    pannerNode: null,
+    currentText: null,
+    targetX: 0,
+    targetZ: 0,
+    isPlaying: false,
+  });
+  const whisperAudioCache = useRef<Map<string, string>>(new Map());
+
+  const triggerSpatialWhisper = useCallback(async (text: string, repo: string, wx: number, wz: number) => {
+    const sw = spatialWhisperRef.current;
+    sw.targetX = wx;
+    sw.targetZ = wz;
+    sw.currentText = text;
+
+    try {
+      const ctx = getSharedAudioCtx();
+      if (!ctx) return;
+
+      // Check cache first
+      let audioSrc = whisperAudioCache.current.get(text);
+      if (!audioSrc) {
+        const res = await fetch('/api/altar/whisper', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text, repoName: repo }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.audioBase64) {
+            const b64 = String(data.audioBase64);
+            audioSrc = b64;
+            whisperAudioCache.current.set(text, b64);
+          }
+        }
+      }
+
+      if (audioSrc) {
+        if (!sw.audio) {
+          const audio = new Audio();
+          audio.crossOrigin = 'anonymous';
+          const srcNode = ctx.createMediaElementSource(audio);
+          const panner = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+          const gain = ctx.createGain();
+          gain.gain.setValueAtTime(0.35, ctx.currentTime);
+
+          if (panner) {
+            srcNode.connect(panner);
+            panner.connect(gain);
+          } else {
+            srcNode.connect(gain);
+          }
+          gain.connect(ctx.destination);
+
+          sw.audio = audio;
+          sw.gainNode = gain;
+          sw.pannerNode = panner;
+        }
+
+        sw.audio.src = audioSrc;
+        sw.audio.currentTime = 0;
+        sw.audio.play().catch(() => {});
+        sw.isPlaying = true;
+      } else {
+        // High fidelity speech synthesis fallback
+        if ('speechSynthesis' in window) {
+          window.speechSynthesis.cancel();
+          const utter = new SpeechSynthesisUtterance(text);
+          utter.rate = 0.85;
+          utter.pitch = 0.78;
+          utter.volume = 0.6;
+          window.speechSynthesis.speak(utter);
+        }
+        playProceduralSFX('candle');
+      }
+    } catch (_e) {
+      // Ignored
+    }
+  }, []);
 
   // References to props and callbacks for single-mount WebGL stability
   const reposRef = useRef(repos);
@@ -1888,6 +1981,14 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
             repo: touchingWispText.repo,
           };
           setActiveWhisper(activeWhisperRef.current);
+
+          // Trigger ElevenLabs spatial proximity ghost voice whisper
+          triggerSpatialWhisper(
+            touchingWispText.text,
+            touchingWispText.repo,
+            touchingWispText.worldX,
+            touchingWispText.worldZ
+          );
         }
 
         if (wispDialogueRef.current && mountRef.current) {
@@ -1914,9 +2015,42 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
         if (activeWhisperRef.current) {
           activeWhisperRef.current = null;
           setActiveWhisper(null);
+          const sw = spatialWhisperRef.current;
+          if (sw.isPlaying && sw.audio) {
+            sw.audio.pause();
+            sw.isPlaying = false;
+          }
+          if ('speechSynthesis' in window) {
+            window.speechSynthesis.cancel();
+          }
         }
         if (wispDialogueRef.current) {
           wispDialogueRef.current.style.opacity = '0';
+        }
+      }
+
+      // Dynamic Spatial Audio Attenuation & Stereo Panning for Ghost Whisper
+      const swState = spatialWhisperRef.current;
+      if (swState.isPlaying && swState.gainNode) {
+        const distToWisp = Math.hypot(p.x - swState.targetX, p.z - swState.targetZ);
+        const ctx = getSharedAudioCtx();
+        if (ctx) {
+          if (distToWisp < 4.5) {
+            const vol = Math.max(0, Math.min(1, (4.5 - distToWisp) / 3.0)) * 0.75;
+            swState.gainNode.gain.setValueAtTime(vol, ctx.currentTime);
+
+            if (swState.pannerNode) {
+              const pan = Math.max(-1, Math.min(1, (swState.targetX - p.x) / 3.2));
+              swState.pannerNode.pan.setValueAtTime(pan, ctx.currentTime);
+            }
+          } else {
+            // Out of range fade out
+            swState.gainNode.gain.setValueAtTime(0, ctx.currentTime);
+            if (swState.audio && !swState.audio.paused) {
+              swState.audio.pause();
+            }
+            swState.isPlaying = false;
+          }
         }
       }
 
@@ -2074,6 +2208,10 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
         sp.mesh.geometry.dispose();
         (sp.mesh.material as THREE.Material).dispose();
       });
+      if (spatialWhisperRef.current.audio) {
+        spatialWhisperRef.current.audio.pause();
+        spatialWhisperRef.current.isPlaying = false;
+      }
       if (mountRef.current && renderer.domElement) {
         mountRef.current.removeChild(renderer.domElement);
       }
