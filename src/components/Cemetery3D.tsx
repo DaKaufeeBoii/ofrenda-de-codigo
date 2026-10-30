@@ -79,6 +79,7 @@ export function getDevotionTier(candlesLit: number = 0) {
 interface Grave3D {
   repo: DepartedRepo;
   group: THREE.Group;
+  offeringsGroup: THREE.Group;
   x: number;
   z: number;
   runeRing: THREE.Mesh;
@@ -354,6 +355,161 @@ function createEngravedHeadstoneTexture(repo: DepartedRepo): THREE.CanvasTexture
   return texture;
 }
 
+// 3D Procedural Offering Mesh Generator
+function create3DOfferingMesh(type: string): THREE.Group {
+  const group = new THREE.Group();
+
+  if (type === 'coffee') {
+    // Ceramic Coffee Mug
+    const mugGeo = new THREE.CylinderGeometry(0.08, 0.07, 0.14, 16);
+    const mugMat = new THREE.MeshStandardMaterial({
+      color: 0x312e81,
+      roughness: 0.3,
+      metalness: 0.1,
+    });
+    const mug = new THREE.Mesh(mugGeo, mugMat);
+    mug.position.y = 0.07;
+    mug.castShadow = true;
+    group.add(mug);
+
+    // Dark Brew Liquid Surface
+    const brewGeo = new THREE.CircleGeometry(0.072, 16);
+    brewGeo.rotateX(-Math.PI / 2);
+    const brewMat = new THREE.MeshStandardMaterial({
+      color: 0x271306,
+      roughness: 0.4,
+    });
+    const brew = new THREE.Mesh(brewGeo, brewMat);
+    brew.position.y = 0.138;
+    group.add(brew);
+
+    // Toroidal Handle
+    const handleGeo = new THREE.TorusGeometry(0.045, 0.014, 8, 16, Math.PI * 1.3);
+    const handle = new THREE.Mesh(handleGeo, mugMat);
+    handle.position.set(0.085, 0.07, 0);
+    handle.rotation.z = -Math.PI / 2;
+    group.add(handle);
+  } else if (type === 'marigold') {
+    // Vibrant Cempasúchil Flower Head
+    const centerGeo = new THREE.SphereGeometry(0.05, 8, 8);
+    const centerMat = new THREE.MeshStandardMaterial({
+      color: 0xd97706,
+      roughness: 0.8,
+    });
+    const center = new THREE.Mesh(centerGeo, centerMat);
+    center.position.y = 0.05;
+    group.add(center);
+
+    // 8 Petals radiating outward
+    const petalGeo = new THREE.CircleGeometry(0.042, 6);
+    const petalMat = new THREE.MeshStandardMaterial({
+      color: 0xf59e0b,
+      side: THREE.DoubleSide,
+      roughness: 0.6,
+    });
+    for (let i = 0; i < 8; i++) {
+      const angle = (i * Math.PI * 2) / 8;
+      const petal = new THREE.Mesh(petalGeo, petalMat);
+      petal.position.set(Math.cos(angle) * 0.06, 0.05, Math.sin(angle) * 0.06);
+      petal.rotation.x = Math.PI / 3;
+      petal.rotation.y = angle;
+      group.add(petal);
+    }
+  } else if (type === 'pan_de_muerto') {
+    // Traditional Pan de Muerto Bun
+    const bunGeo = new THREE.SphereGeometry(0.10, 16, 12);
+    bunGeo.scale(1, 0.55, 1);
+    const bunMat = new THREE.MeshStandardMaterial({
+      color: 0xd97706,
+      roughness: 0.85,
+    });
+    const bun = new THREE.Mesh(bunGeo, bunMat);
+    bun.position.y = 0.055;
+    bun.castShadow = true;
+    group.add(bun);
+
+    // Crossed Bone Ridges
+    const boneMat = new THREE.MeshStandardMaterial({
+      color: 0xfef08a,
+      roughness: 0.7,
+    });
+    const boneGeo = new THREE.CylinderGeometry(0.016, 0.016, 0.17, 8);
+    boneGeo.rotateZ(Math.PI / 2);
+    const bone1 = new THREE.Mesh(boneGeo, boneMat);
+    bone1.position.y = 0.105;
+    group.add(bone1);
+
+    const bone2 = new THREE.Mesh(boneGeo, boneMat);
+    bone2.position.y = 0.105;
+    bone2.rotation.y = Math.PI / 2;
+    group.add(bone2);
+
+    // Top Sugar Skull Bead
+    const beadGeo = new THREE.SphereGeometry(0.025, 8, 8);
+    const bead = new THREE.Mesh(beadGeo, boneMat);
+    bead.position.y = 0.125;
+    group.add(bead);
+  } else if (type === 'fork') {
+    // Silver Fork / Repository Fork Relic
+    const handleGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.16, 8);
+    const forkMat = new THREE.MeshStandardMaterial({
+      color: 0xe2e8f0,
+      metalness: 0.85,
+      roughness: 0.25,
+    });
+    const handle = new THREE.Mesh(handleGeo, forkMat);
+    handle.position.y = 0.08;
+    handle.rotation.z = Math.PI / 4;
+    group.add(handle);
+
+    // Prongs
+    const prongGeo = new THREE.BoxGeometry(0.04, 0.06, 0.008);
+    const prongs = new THREE.Mesh(prongGeo, forkMat);
+    prongs.position.set(0.06, 0.14, 0);
+    prongs.rotation.z = Math.PI / 4;
+    group.add(prongs);
+  } else {
+    // Default Candle / Votive Jar
+    const jarGeo = new THREE.CylinderGeometry(0.055, 0.055, 0.16, 12);
+    const jarMat = new THREE.MeshStandardMaterial({
+      color: 0xfef3c7,
+      roughness: 0.3,
+    });
+    const jar = new THREE.Mesh(jarGeo, jarMat);
+    jar.position.y = 0.08;
+    group.add(jar);
+
+    const flGeo = new THREE.ConeGeometry(0.035, 0.08, 8);
+    const flMat = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
+    const fl = new THREE.Mesh(flGeo, flMat);
+    fl.position.y = 0.19;
+    group.add(fl);
+  }
+
+  return group;
+}
+
+// Helper: Populates 3D physical offering meshes in an arc along the grave base
+function populateGraveOfferings(offeringsGroup: THREE.Group, offerings: AltarOffering[]) {
+  while (offeringsGroup.children.length > 0) {
+    const c = offeringsGroup.children[0];
+    offeringsGroup.remove(c);
+  }
+
+  const slotAngles = [-0.65, -0.32, 0, 0.32, 0.65];
+  const radius = 0.70;
+
+  offerings.slice(0, 5).forEach((off, idx) => {
+    const mesh = create3DOfferingMesh(off.offeringType);
+    const angle = slotAngles[idx] || 0;
+    const ox = Math.sin(angle) * radius;
+    const oz = Math.cos(angle) * radius + 0.15;
+    mesh.position.set(ox, 0.08, oz);
+    mesh.rotation.y = (Math.random() - 0.5) * 0.4;
+    offeringsGroup.add(mesh);
+  });
+}
+
 // Helper: Constructs a complete 3D grave group with headstone, engraved plaque, candles, and wisps
 function buildGrave3D(
   repo: DepartedRepo,
@@ -477,9 +633,17 @@ function buildGrave3D(
     });
   }
 
+  // 8. Physical 3D Devotee Offerings on Grave Mound
+  const offeringsGroup = new THREE.Group();
+  offeringsGroup.position.set(0, 0, 0);
+  gGroup.add(offeringsGroup);
+
+  populateGraveOfferings(offeringsGroup, graveOfferings);
+
   return {
     repo,
     group: gGroup,
+    offeringsGroup,
     x: pos.x,
     z: pos.z,
     runeRing,
@@ -773,6 +937,12 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
   // Keyboard Event Handlers
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore game keyboard shortcuts when user is typing in a modal or form input/textarea!
+      const targetTag = (e.target as HTMLElement)?.tagName;
+      if (targetTag === 'INPUT' || targetTag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) {
+        return;
+      }
+
       const key = e.key.toLowerCase();
       keysPressed.current[key] = true;
 
@@ -823,6 +993,16 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
       }
       if (key === '5') onOpenOfferingsWall();
       if (key === 'g') onOpenSummonModal();
+
+      // [O]: Place Devotee Offering Modal
+      if (key === 'o') {
+        const target = inspectingGrave || activePrompt?.targetRepo;
+        if (target) {
+          onOpenOfferingModal(target);
+        } else if (repos.length > 0) {
+          onOpenOfferingModal(repos[0]);
+        }
+      }
 
       // [C] or [Tab]: Codex of the Dead
       if (key === 'c') {
@@ -1911,6 +2091,8 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
       const existing = graves3DRef.current.find((g) => g.repo.id === repo.id);
       if (existing) {
         existing.repo = repo;
+        const graveOfferings = offerings.filter((o) => o.repoId === repo.id);
+        populateGraveOfferings(existing.offeringsGroup, graveOfferings);
       } else {
         // Erect a new 3D tombstone for the summoned repo!
         const pos = GRAVE_COORDS[idx] || {
@@ -2447,6 +2629,57 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
                 </p>
               </div>
 
+              {/* Devotee Physical Offerings List */}
+              {(() => {
+                const graveOfferings = offerings.filter((o) => o.repoId === inspectingGrave.id);
+                return (
+                  <div className="p-3 rounded-xl bg-obsidian-950/50 border border-purple-800/40 flex flex-col space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px] font-mono text-amber-300">
+                      <span className="font-bold flex items-center space-x-1.5">
+                        <span>🏵️</span>
+                        <span>Devotee Grave Relics & Offerings ({graveOfferings.length})</span>
+                      </span>
+                      <button
+                        onClick={() => onOpenOfferingModal(inspectingGrave)}
+                        className="text-[10px] text-amber-400 hover:text-amber-300 underline font-semibold"
+                      >
+                        + Place Offering [O]
+                      </button>
+                    </div>
+
+                    {graveOfferings.length === 0 ? (
+                      <p className="text-[11px] font-mono text-purple-300/60 italic">
+                        No physical offerings placed yet. Leave a marigold, coffee, or pan de muerto!
+                      </p>
+                    ) : (
+                      <div className="flex items-center space-x-2 overflow-x-auto py-1">
+                        {graveOfferings.map((off) => (
+                          <div
+                            key={off.id}
+                            title={`"${off.message}" — ${off.authorName}`}
+                            className="px-2.5 py-1.5 rounded-lg bg-purple-950/60 border border-purple-700/40 text-[10px] font-mono text-purple-200 flex items-center space-x-1.5 whitespace-nowrap shrink-0 shadow-sm"
+                          >
+                            <span>
+                              {off.offeringType === 'coffee'
+                                ? '☕'
+                                : off.offeringType === 'marigold'
+                                ? '🏵️'
+                                : off.offeringType === 'pan_de_muerto'
+                                ? '🍞'
+                                : off.offeringType === 'fork'
+                                ? '🍴'
+                                : '🕯️'}
+                            </span>
+                            <span className="font-semibold text-amber-200">{off.authorName}:</span>
+                            <span className="italic truncate max-w-[120px]">"{off.message}"</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
               {/* Action Buttons */}
               <div className="flex items-center justify-between pt-1 gap-2 sm:gap-3 flex-wrap sm:flex-nowrap">
                 <button
@@ -2454,6 +2687,13 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
                   className="px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-obsidian-950 font-mono text-xs font-bold shadow-lg transition-all active:scale-95"
                 >
                   <span>🕯️ Kindle [2]</span>
+                </button>
+
+                <button
+                  onClick={() => onOpenOfferingModal(inspectingGrave)}
+                  className="px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-purple-700 hover:from-amber-500 hover:to-purple-600 text-amber-100 font-mono text-xs font-bold shadow-lg transition-all active:scale-95 flex items-center space-x-1"
+                >
+                  <span>🏵️ Offer [O]</span>
                 </button>
 
                 <button
