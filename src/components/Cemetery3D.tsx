@@ -662,6 +662,21 @@ function buildGrave3D(
   };
 }
 
+// Developer Lore Quotes spoken by Grimmy the Imp Companion
+const GRIMMY_LORE_QUOTES = [
+  "Did you know Moment.js had over 100,000 GitHub dependents? That's heavier than a thousand stone sarcophagi!",
+  "Remember callback hell in 2011 before Promises? Pyramid of doom... Grimmy still has nightmares.",
+  "I smell 2 gigabytes of nested node_modules in the graveyard mist... Delicious.",
+  "CoffeeScript gave JavaScript arrow functions and classes seven years before TC39 did. Honor the pioneer!",
+  "Remember when people used Bower AND npm at the exact same time? Dark, chaotic times.",
+  "Enzyme's shallow rendering saved countless React unit tests before React 18 banished it to the underworld.",
+  "Urllib2 fought bravely in the Python 2 to 3 migration wars. May its ASCII byte strings rest in peace.",
+  "Request handled 40 million weekly downloads with zero dependencies. A true titan of the early web.",
+  "Press [2] to kindle candles! The warmer the ofrenda, the happier the code spirits.",
+  "If you press [Spacebar], you do a spectral dash! Watch out, don't trip over the marigold petals!",
+  "Press [Z] in front of any tombstone to inspect the chiseled stone epitaph and developer offerings!",
+];
+
 export const Cemetery3D: React.FC<Cemetery3DProps> = ({
   repos,
   offerings,
@@ -792,6 +807,32 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
     } catch (_e) {
       // Ignored
     }
+  }, []);
+
+  // Grimmy the Imp 3D Familiar Companion State
+  const [grimmyMessage, setGrimmyMessage] = useState<string | null>(null);
+  const grimmyDialogueRef = useRef<HTMLDivElement>(null);
+  const grimmyRef = useRef<THREE.Group | null>(null);
+  const grimmyWingsRef = useRef<{ left: THREE.Group; right: THREE.Group } | null>(null);
+  const grimmyState = useRef({
+    x: 0.9,
+    y: 1.4,
+    z: 6.8,
+    quoteIndex: -1,
+    flapBoost: 0,
+  });
+
+  const handleTalkToGrimmy = useCallback(() => {
+    const quotes = GRIMMY_LORE_QUOTES;
+    const nextIdx = (grimmyState.current.quoteIndex + 1) % quotes.length;
+    grimmyState.current.quoteIndex = nextIdx;
+    grimmyState.current.flapBoost = 1.0;
+    const quote = quotes[nextIdx];
+    setGrimmyMessage(quote);
+    playProceduralSFX('petal');
+    setTimeout(() => {
+      setGrimmyMessage((curr) => (curr === quote ? null : curr));
+    }, 6500);
   }, []);
 
   // References to props and callbacks for single-mount WebGL stability
@@ -1097,6 +1138,11 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
         }
       }
 
+      // [T]: Talk to Grimmy the Imp Companion
+      if (key === 't') {
+        handleTalkToGrimmy();
+      }
+
       // [C] or [Tab]: Codex of the Dead
       if (key === 'c') {
         setCodexOpen((prev) => !prev);
@@ -1137,7 +1183,7 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
       window.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('blur', handleBlur);
     };
-  }, [activePrompt, repos, onOpenContract, onOpen3DAltar, onOpenOfferingsWall, performDash, handleScatterPetals, handleKindleAction, toggleInspectGrave, handleZoomIn, handleZoomOut]);
+  }, [activePrompt, repos, onOpenContract, onOpen3DAltar, onOpenOfferingsWall, performDash, handleScatterPetals, handleKindleAction, toggleInspectGrave, handleZoomIn, handleZoomOut, handleTalkToGrimmy]);
 
   // Pathfind / Walk to specific grave coordinates from Codex
   const handleWalkToGrave = (graveX: number, graveZ: number) => {
@@ -1549,6 +1595,81 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
     scene.add(playerGroup);
     playerMeshRef.current = playerGroup;
 
+    // 12b. Grimmy the Imp 3D Familiar Companion
+    const grimmyGroup = new THREE.Group();
+    grimmyGroup.position.set(0.9, 1.4, 6.8);
+
+    // Cute Obsidian Purple Body
+    const grimmyBodyGeo = new THREE.SphereGeometry(0.18, 16, 16);
+    const grimmyBodyMat = new THREE.MeshStandardMaterial({
+      color: 0x3b0764,
+      roughness: 0.35,
+      metalness: 0.2,
+    });
+    const grimmyBody = new THREE.Mesh(grimmyBodyGeo, grimmyBodyMat);
+    grimmyBody.castShadow = true;
+    grimmyGroup.add(grimmyBody);
+
+    // Glowing Amber Eyes
+    const grimmyEyeGeo = new THREE.SphereGeometry(0.038, 8, 8);
+    const grimmyEyeMat = new THREE.MeshBasicMaterial({ color: 0xfbbf24 });
+    const leftEye = new THREE.Mesh(grimmyEyeGeo, grimmyEyeMat);
+    leftEye.position.set(-0.065, 0.04, 0.15);
+    grimmyGroup.add(leftEye);
+
+    const rightEye = new THREE.Mesh(grimmyEyeGeo, grimmyEyeMat);
+    rightEye.position.set(0.065, 0.04, 0.15);
+    grimmyGroup.add(rightEye);
+
+    // Cute Golden Horns
+    const hornGeo = new THREE.ConeGeometry(0.035, 0.12, 8);
+    const hornMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.3 });
+    const leftHorn = new THREE.Mesh(hornGeo, hornMat);
+    leftHorn.position.set(-0.08, 0.16, -0.02);
+    leftHorn.rotation.z = 0.35;
+    leftHorn.rotation.x = -0.2;
+    grimmyGroup.add(leftHorn);
+
+    const rightHorn = new THREE.Mesh(hornGeo, hornMat);
+    rightHorn.position.set(0.08, 0.16, -0.02);
+    rightHorn.rotation.z = -0.35;
+    rightHorn.rotation.x = -0.2;
+    grimmyGroup.add(rightHorn);
+
+    // Translucent Flapping Spirit Wings
+    const wingMat = new THREE.MeshStandardMaterial({
+      color: 0xc084fc,
+      transparent: true,
+      opacity: 0.85,
+      side: THREE.DoubleSide,
+      roughness: 0.5,
+    });
+    const wingShapeGeo = new THREE.CircleGeometry(0.16, 6, 0, Math.PI);
+    wingShapeGeo.rotateZ(-Math.PI / 2);
+
+    const leftWingPivot = new THREE.Group();
+    leftWingPivot.position.set(-0.14, 0.04, -0.06);
+    const leftWingMesh = new THREE.Mesh(wingShapeGeo, wingMat);
+    leftWingPivot.add(leftWingMesh);
+    grimmyGroup.add(leftWingPivot);
+
+    const rightWingPivot = new THREE.Group();
+    rightWingPivot.position.set(0.14, 0.04, -0.06);
+    const rightWingMesh = new THREE.Mesh(wingShapeGeo, wingMat);
+    rightWingMesh.scale.x = -1;
+    rightWingPivot.add(rightWingMesh);
+    grimmyGroup.add(rightWingPivot);
+
+    grimmyWingsRef.current = { left: leftWingPivot, right: rightWingPivot };
+
+    // Faint Amber Halo Light
+    const grimmyLight = new THREE.PointLight(0xf59e0b, 0.75, 2.8);
+    grimmyLight.position.set(0, 0, 0.1);
+    grimmyGroup.add(grimmyLight);
+
+    scene.add(grimmyGroup);
+    grimmyRef.current = grimmyGroup;
+
     // 13. Footstep Trail Particle Pool (20 small fading ground embers)
     const trailPoolSize = 20;
     const trailGeo = new THREE.CircleGeometry(0.08, 8);
@@ -1804,6 +1925,47 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
           if (sp.life <= 0) sp.mesh.visible = false;
         }
       });
+
+      // Update Grimmy the Imp Familiar Flight & Flapping Physics
+      if (grimmyRef.current && grimmyWingsRef.current) {
+        const gs = grimmyState.current;
+        const shoulderOffsetAngle = p.currentRotation - Math.PI * 0.72;
+        const targetGrimmyX = p.x + Math.sin(shoulderOffsetAngle) * 0.95;
+        const targetGrimmyZ = p.z + Math.cos(shoulderOffsetAngle) * 0.95;
+        const targetGrimmyY = 1.35 + Math.sin(elapsedTime * 3.6) * 0.14;
+
+        gs.x += (targetGrimmyX - gs.x) * 0.08;
+        gs.z += (targetGrimmyZ - gs.z) * 0.08;
+        gs.y += (targetGrimmyY - gs.y) * 0.10;
+
+        grimmyRef.current.position.set(gs.x, gs.y, gs.z);
+
+        // Grimmy faces movement or smoothly turns
+        grimmyRef.current.rotation.y = lerpShortestAngle(grimmyRef.current.rotation.y, p.currentRotation, 0.12);
+        grimmyRef.current.rotation.z = Math.sin(elapsedTime * 3.6) * 0.08;
+
+        // Wing flutter
+        gs.flapBoost *= 0.94;
+        const flapFrequency = 14 + (p.isMoving ? 10 : 0) + gs.flapBoost * 22;
+        const wingAngle = Math.sin(elapsedTime * flapFrequency) * (0.45 + gs.flapBoost * 0.35);
+        grimmyWingsRef.current.left.rotation.y = wingAngle;
+        grimmyWingsRef.current.right.rotation.y = -wingAngle;
+
+        // Project Grimmy Speech Dialogue balloon
+        if (grimmyDialogueRef.current && mountRef.current) {
+          const w = mountRef.current.clientWidth;
+          const h = mountRef.current.clientHeight;
+
+          const gVec = new THREE.Vector3(gs.x, gs.y + 0.35, gs.z);
+          gVec.project(camera);
+
+          if (gVec.z < 1) {
+            const screenX = ((gVec.x + 1) * w) / 2;
+            const screenY = ((-gVec.y + 1) * h) / 2;
+            grimmyDialogueRef.current.style.transform = `translate3d(${screenX}px, ${screenY}px, 0)`;
+          }
+        }
+      }
 
       // Camera Smooth Tracking (Dynamic Zoom & Inspection Mode)
       const cam = cameraState.current;
@@ -2473,6 +2635,30 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
         )}
       </div>
 
+      {/* GRIMMY THE IMP 3D SPEECH BALLOON */}
+      <div
+        ref={grimmyDialogueRef}
+        className={`absolute top-0 left-0 pointer-events-none z-30 transition-opacity duration-200 will-change-transform ${
+          grimmyMessage ? 'opacity-100' : 'opacity-0'
+        }`}
+      >
+        {grimmyMessage && (
+          <div className="relative -translate-x-1/2 -translate-y-full mb-3.5 pointer-events-auto">
+            <div className="relative max-w-xs px-4 py-2.5 rounded-2xl bg-[#260e47]/95 backdrop-blur-xl border border-amber-400/80 shadow-[0_0_30px_rgba(245,158,11,0.5)] text-left select-none animate-in fade-in zoom-in-95 duration-200">
+              <div className="flex items-center space-x-1.5 text-[10px] font-mono text-amber-300 font-bold border-b border-purple-800/40 pb-1 mb-1">
+                <span>🦇</span>
+                <span>Grimmy the Familiar</span>
+                <span className="text-[9px] text-purple-300 font-normal ml-auto">[T to talk]</span>
+              </div>
+              <p className="text-xs font-serif italic text-purple-100 leading-snug">
+                "{grimmyMessage}"
+              </p>
+              <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[7px] border-l-transparent border-r-[7px] border-r-transparent border-t-[7px] border-t-[#260e47]" />
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* BOTTOM CENTER: SOULS-LIKE IN-WORLD ACTION BANNER */}
       {activePrompt && (
         <div className="absolute bottom-28 left-1/2 -translate-x-1/2 z-30 pointer-events-auto animate-fade-in w-full max-w-lg px-4">
@@ -2599,6 +2785,16 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
           <span className="absolute top-1 left-1.5 text-[9px] font-mono font-bold text-sky-300/80">G</span>
         </button>
 
+        {/* Slot 7: Talk to Grimmy Companion */}
+        <button
+          onClick={handleTalkToGrimmy}
+          title="Talk to Grimmy the Companion [Key T]"
+          className="relative group w-12 h-12 rounded-xl bg-gradient-to-b from-purple-950/70 to-obsidian-900 border border-purple-500/50 hover:border-amber-400 flex flex-col items-center justify-center transition-all active:scale-95 shadow-[0_0_15px_rgba(168,85,247,0.3)]"
+        >
+          <span className="text-lg">🦇</span>
+          <span className="absolute top-1 left-1.5 text-[9px] font-mono font-bold text-amber-300/90">T</span>
+        </button>
+
         <div className="w-[1px] h-8 bg-purple-900/60 mx-1" />
 
         {/* Slot Space: Spectral Dash */}
@@ -2622,6 +2818,7 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
         <div>🎮 <strong>WASD / Arrows</strong>: Smooth glide & persistent facing</div>
         <div>🎯 <strong>Click Ground</strong>: Raycasted pathfinding target</div>
         <div>⚡ <strong>Spacebar</strong>: Instant spectral dash</div>
+        <div>🦇 <strong>Key T</strong>: Talk to Grimmy the Companion</div>
       </div>
 
       {/* ANCIENT CODEX OF THE DEAD (GRIMOIRE MODAL) */}
