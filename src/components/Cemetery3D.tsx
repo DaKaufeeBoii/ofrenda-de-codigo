@@ -120,11 +120,18 @@ const playProceduralSFX = (type: 'step' | 'candle' | 'petal' | 'gong' | 'dash') 
 };
 
 // Helper: Shortest angular interpolation
+const normalizeAngle = (angle: number): number => {
+  let a = angle % (Math.PI * 2);
+  if (a > Math.PI) a -= Math.PI * 2;
+  if (a < -Math.PI) a += Math.PI * 2;
+  return a;
+};
+
 const lerpShortestAngle = (from: number, to: number, factor: number): number => {
   let diff = to - from;
   while (diff < -Math.PI) diff += Math.PI * 2;
   while (diff > Math.PI) diff -= Math.PI * 2;
-  return from + diff * factor;
+  return normalizeAngle(from + diff * factor);
 };
 
 const GRAVE_COORDS = [
@@ -196,8 +203,8 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
     targetX: 0,
     targetZ: 6,
     hasTarget: false,
-    currentRotation: 0,
-    targetRotation: 0,
+    currentRotation: Math.PI,
+    targetRotation: Math.PI,
     isMoving: false,
     walkCycle: 0,
     lastStepTime: 0,
@@ -307,12 +314,22 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
       keysPressed.current[e.key.toLowerCase()] = false;
     };
 
+    const handleBlur = () => {
+      keysPressed.current = {};
+      const p = playerState.current;
+      p.vx = 0;
+      p.vz = 0;
+      p.isMoving = false;
+    };
+
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleBlur);
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleBlur);
     };
   }, [activePrompt, repos, onOpenContract, onOpen3DAltar, onOpenOfferingsWall, performDash, handleScatterPetals, handleKindleAction]);
 
@@ -1043,8 +1060,18 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
             targetRepo: grave.repo,
             text: `[E] Commune with ${grave.repo.name}`,
             subtext: `Speak with the spirit via Gemma 2 or sign the Pact of Transmutation`,
-            action: () => onOpenContract(grave.repo, 'seance'),
-            secondaryAction: () => onOpenContract(grave.repo, 'resurrection'),
+            action: () => {
+              keysPressed.current = {};
+              p.vx = 0; p.vz = 0; p.isMoving = false;
+              p.targetRotation = Math.atan2(grave.x - p.x, grave.z - p.z);
+              onOpenContract(grave.repo, 'seance');
+            },
+            secondaryAction: () => {
+              keysPressed.current = {};
+              p.vx = 0; p.vz = 0; p.isMoving = false;
+              p.targetRotation = Math.atan2(grave.x - p.x, grave.z - p.z);
+              onOpenContract(grave.repo, 'resurrection');
+            },
             secondaryText: '[R] Resurrect',
           };
         }
@@ -1060,6 +1087,9 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
           text: `[E] Enter 3D Candle Sanctuary`,
           subtext: `Light candles on the stone pedestal and listen to cathedral eulogies`,
           action: () => {
+            keysPressed.current = {};
+            p.vx = 0; p.vz = 0; p.isMoving = false;
+            p.targetRotation = Math.atan2(0 - p.x, 0 - p.z);
             if (repos.length > 0) onOpen3DAltar(repos[0]);
           },
         };
