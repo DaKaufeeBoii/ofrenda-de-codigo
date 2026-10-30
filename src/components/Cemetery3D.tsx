@@ -16,6 +16,9 @@ import {
   Crosshair,
   Shield,
   Zap,
+  ZoomIn,
+  ZoomOut,
+  Eye,
 } from 'lucide-react';
 
 interface Cemetery3DProps {
@@ -416,6 +419,8 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
     action: () => void;
     secondaryAction?: () => void;
     secondaryText?: string;
+    tertiaryAction?: () => void;
+    tertiaryText?: string;
   } | null>(null);
 
   const [activeWhisper, setActiveWhisper] = useState<{ text: string; author: string; repo: string } | null>(null);
@@ -425,6 +430,16 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
   const [miniMapExpanded, setMiniMapExpanded] = useState(false);
   const [hudMessage, setHudMessage] = useState<string | null>('Explore the Cemetery of Departed Code. Honor the fallen.');
   const [totalCandles, setTotalCandles] = useState<number>(0);
+  const [inspectingGrave, setInspectingGrave] = useState<DepartedRepo | null>(null);
+  const [currentZoomLevel, setCurrentZoomLevel] = useState<number>(1.0);
+
+  // Dynamic Camera Zoom & Tombstone Inspection State
+  const cameraState = useRef({
+    currentZoom: 1.0,
+    targetZoom: 1.0,
+    isInspecting: false,
+    inspectGrave: null as Grave3D | null,
+  });
 
   // References to props and callbacks for single-mount WebGL stability
   const reposRef = useRef(repos);
@@ -536,6 +551,57 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
     }
   }, [activePrompt, repos, onOpenOfferingModal, onOpen3DAltar]);
 
+  // Dynamic Camera Zoom Controls
+  const handleZoomIn = useCallback(() => {
+    cameraState.current.targetZoom = Math.min(1.85, cameraState.current.targetZoom + 0.25);
+    setCurrentZoomLevel(cameraState.current.targetZoom);
+    playProceduralSFX('petal');
+  }, []);
+
+  const handleZoomOut = useCallback(() => {
+    cameraState.current.targetZoom = Math.max(0.55, cameraState.current.targetZoom - 0.25);
+    setCurrentZoomLevel(cameraState.current.targetZoom);
+    playProceduralSFX('petal');
+  }, []);
+
+  // 3D Tombstone Inspection Mode Toggle
+  const toggleInspectGrave = useCallback((repo?: DepartedRepo) => {
+    const cam = cameraState.current;
+    if (cam.isInspecting) {
+      cam.isInspecting = false;
+      cam.inspectGrave = null;
+      setInspectingGrave(null);
+      setHudMessage('Exited tombstone inspection view.');
+      setTimeout(() => setHudMessage(null), 2500);
+    } else {
+      let target = repo || activePrompt?.targetRepo;
+      let grave3D = target ? graves3DRef.current.find((g) => g.repo.id === target.id) : null;
+
+      // If no target specified, inspect the nearest grave within 4.5 units
+      if (!grave3D) {
+        const p = playerState.current;
+        let minDist = 4.5;
+        for (const g of graves3DRef.current) {
+          const dist = Math.hypot(p.x - g.x, p.z - g.z);
+          if (dist < minDist) {
+            minDist = dist;
+            grave3D = g;
+            target = g.repo;
+          }
+        }
+      }
+
+      if (grave3D && target) {
+        cam.isInspecting = true;
+        cam.inspectGrave = grave3D;
+        setInspectingGrave(target);
+        playProceduralSFX('gong');
+        setHudMessage(`Inspecting sacred tombstone of ${target.name} [Z / Esc to step back]`);
+        setTimeout(() => setHudMessage(null), 3500);
+      }
+    }
+  }, [activePrompt]);
+
   // Keyboard Event Handlers
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -560,6 +626,21 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
       if (key === 'r' && activePrompt?.secondaryAction) {
         activePrompt.secondaryAction();
       }
+
+      // [Z]: Tombstone Inspection Mode
+      if (key === 'z') {
+        if (cameraState.current.isInspecting) {
+          toggleInspectGrave();
+        } else if (activePrompt?.tertiaryAction) {
+          activePrompt.tertiaryAction();
+        } else if (activePrompt?.targetRepo) {
+          toggleInspectGrave(activePrompt.targetRepo);
+        }
+      }
+
+      // [+] / [-]: Zoom shortcuts
+      if (key === '=' || key === '+') handleZoomIn();
+      if (key === '-' || key === '_') handleZoomOut();
 
       // Hotbar Number Keys: 1 - 5
       if (key === '1') handleScatterPetals();
@@ -586,6 +667,9 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
       }
 
       if (key === 'escape') {
+        if (cameraState.current.isInspecting) {
+          toggleInspectGrave();
+        }
         setCodexOpen(false);
         setMiniMapExpanded(false);
       }
@@ -612,7 +696,7 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
       window.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('blur', handleBlur);
     };
-  }, [activePrompt, repos, onOpenContract, onOpen3DAltar, onOpenOfferingsWall, performDash, handleScatterPetals, handleKindleAction]);
+  }, [activePrompt, repos, onOpenContract, onOpen3DAltar, onOpenOfferingsWall, performDash, handleScatterPetals, handleKindleAction, toggleInspectGrave, handleZoomIn, handleZoomOut]);
 
   // Pathfind / Walk to specific grave coordinates from Codex
   const handleWalkToGrave = (graveX: number, graveZ: number) => {
@@ -1074,6 +1158,16 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
 
     renderer.domElement.addEventListener('pointerdown', handlePointerDown);
 
+    // Dynamic Camera Zoom via Mouse Wheel
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const zoomDelta = e.deltaY < 0 ? 0.15 : -0.15;
+      cameraState.current.targetZoom = Math.max(0.55, Math.min(1.85, cameraState.current.targetZoom + zoomDelta));
+      setCurrentZoomLevel(cameraState.current.targetZoom);
+    };
+
+    renderer.domElement.addEventListener('wheel', handleWheel, { passive: false });
+
     // 15. Game Loop & Natural Kinematics Physics
     const startTime = performance.now();
     let animId: number;
@@ -1208,11 +1302,32 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
         }
       });
 
-      // Camera Smooth Tracking (2.5D Isometric Follow)
-      camera.position.x += (p.x - camera.position.x) * 0.06;
-      camera.position.z += (p.z + 10.5 - camera.position.z) * 0.06;
-      camera.position.y = 11.0;
-      camera.lookAt(p.x, 0.8, p.z);
+      // Camera Smooth Tracking (Dynamic Zoom & Inspection Mode)
+      const cam = cameraState.current;
+      cam.currentZoom = THREE.MathUtils.lerp(cam.currentZoom, cam.targetZoom, 0.08);
+
+      if (cam.isInspecting && cam.inspectGrave) {
+        // Freeze player movement during stone inspection
+        p.vx = 0;
+        p.vz = 0;
+        p.isMoving = false;
+        const gx = cam.inspectGrave.x;
+        const gz = cam.inspectGrave.z;
+        // Position camera directly in front of the carved headstone facing south (+Z)
+        camera.position.x = THREE.MathUtils.lerp(camera.position.x, gx, 0.08);
+        camera.position.y = THREE.MathUtils.lerp(camera.position.y, 1.40, 0.08);
+        camera.position.z = THREE.MathUtils.lerp(camera.position.z, gz + 2.35, 0.08);
+        camera.lookAt(gx, 1.15, gz);
+      } else {
+        const zoomInv = 1 / cam.currentZoom;
+        const targetCamX = p.x;
+        const targetCamY = 11.0 * zoomInv;
+        const targetCamZ = p.z + 10.5 * zoomInv;
+        camera.position.x += (targetCamX - camera.position.x) * 0.06;
+        camera.position.y += (targetCamY - camera.position.y) * 0.06;
+        camera.position.z += (targetCamZ - camera.position.z) * 0.06;
+        camera.lookAt(p.x, 0.8, p.z);
+      }
 
       // Flickering Lantern Point Light
       if (playerLightRef.current) {
@@ -1304,6 +1419,8 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
               callbacksRef.current.onOpenContract(grave.repo, 'resurrection');
             },
             secondaryText: '[R] Resurrect',
+            tertiaryAction: () => toggleInspectGrave(grave.repo),
+            tertiaryText: '[Z] Inspect Stone',
           };
         }
       }
@@ -1539,6 +1656,7 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
 
     return () => {
       renderer.domElement.removeEventListener('pointerdown', handlePointerDown);
+      renderer.domElement.removeEventListener('wheel', handleWheel);
       window.removeEventListener('resize', handleResize);
       cancelAnimationFrame(animId);
       if (mountRef.current && renderer.domElement) {
@@ -1699,6 +1817,27 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
 
         {/* Quick Game Action Pills */}
         <div className="flex items-center space-x-2">
+          {/* Dynamic Camera Zoom Controls */}
+          <div className="flex items-center space-x-1 bg-obsidian-950/90 border border-amber-600/40 rounded-2xl p-1 shadow-xl backdrop-blur-md">
+            <button
+              onClick={handleZoomOut}
+              title="Zoom Camera Out [- or Wheel Down]"
+              className="p-1.5 rounded-xl hover:bg-amber-950/60 text-amber-300 transition-all active:scale-90"
+            >
+              <ZoomOut size={14} />
+            </button>
+            <span className="text-[10px] font-mono font-bold text-amber-200/90 px-1">
+              {Math.round(currentZoomLevel * 100)}%
+            </span>
+            <button
+              onClick={handleZoomIn}
+              title="Zoom Camera In [+ or Wheel Up]"
+              className="p-1.5 rounded-xl hover:bg-amber-950/60 text-amber-300 transition-all active:scale-90"
+            >
+              <ZoomIn size={14} />
+            </button>
+          </div>
+
           {/* Cathedral Sound Toggle */}
           <button
             onClick={onToggleSound}
@@ -1811,6 +1950,16 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
                   className="px-3.5 py-2 rounded-xl bg-purple-900/80 hover:bg-purple-800 text-purple-200 font-mono text-xs border border-purple-500/40 transition-colors"
                 >
                   {activePrompt.secondaryText || '[R]'}
+                </button>
+              )}
+
+              {activePrompt.tertiaryAction && (
+                <button
+                  onClick={activePrompt.tertiaryAction}
+                  className="px-3 py-2 rounded-xl bg-amber-900/80 hover:bg-amber-800 text-amber-200 font-mono text-xs border border-amber-500/40 flex items-center space-x-1 transition-colors"
+                >
+                  <Eye size={12} className="text-amber-300" />
+                  <span>{activePrompt.tertiaryText || '[Z] Inspect'}</span>
                 </button>
               )}
             </div>
@@ -1997,6 +2146,97 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
               })}
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* 3D TOMBSTONE INSPECTION MODE CINEMATIC OVERLAY */}
+      {inspectingGrave && (
+        <div className="fixed inset-0 z-40 pointer-events-none flex flex-col justify-between animate-fade-in">
+          {/* Top Cinematic Letterbox Bar */}
+          <div className="w-full h-16 sm:h-20 bg-gradient-to-b from-black/90 via-black/60 to-transparent flex items-center justify-between px-6 pointer-events-auto">
+            <div className="flex items-center space-x-3">
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping" />
+              <span className="text-xs font-mono uppercase tracking-widest text-amber-200/90 font-bold">
+                TOMBSTONE INSPECTION MODE
+              </span>
+            </div>
+
+            <button
+              onClick={() => toggleInspectGrave()}
+              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-obsidian-950/80 hover:bg-obsidian-900 border border-amber-500/40 text-amber-200 font-mono text-xs transition-all active:scale-95"
+            >
+              <span>Step Back [Z / Esc]</span>
+              <span className="text-amber-400 font-bold">✕</span>
+            </button>
+          </div>
+
+          {/* Bottom Cinematic Relic Inspection Card */}
+          <div className="w-full bg-gradient-to-t from-black/95 via-obsidian-950/90 to-transparent pt-12 pb-8 px-6 flex justify-center pointer-events-auto">
+            <div className="w-full max-w-2xl rounded-3xl bg-[#130b24]/90 backdrop-blur-xl border-2 border-amber-500/50 p-6 shadow-[0_0_60px_rgba(245,158,11,0.35)] flex flex-col space-y-4">
+              
+              {/* Header */}
+              <div className="flex items-start justify-between border-b border-amber-500/20 pb-3">
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-xl">🪦</span>
+                    <h3 className="text-2xl font-bold font-serif-gothic text-amber-100 tracking-wider">
+                      {inspectingGrave.name}
+                    </h3>
+                  </div>
+                  <p className="text-xs font-mono text-purple-300 mt-0.5">
+                    Resting since {inspectingGrave.yearsActive} • Chiseled Stone Epitaph
+                  </p>
+                </div>
+
+                <div className="flex items-center space-x-2 font-mono text-xs">
+                  <span className="px-2.5 py-1 rounded-lg bg-amber-950/60 border border-amber-500/40 text-amber-300">
+                    ★ {inspectingGrave.starsAtSunset.toLocaleString()} Stars
+                  </span>
+                  <span className="px-2.5 py-1 rounded-lg bg-purple-950/60 border border-purple-500/40 text-purple-200">
+                    🕯️ {inspectingGrave.candlesLit} Candles
+                  </span>
+                </div>
+              </div>
+
+              {/* Stone Carved Inscription */}
+              <div className="p-3.5 rounded-xl bg-obsidian-950/60 border border-purple-800/30">
+                <p className="text-xs sm:text-sm font-serif italic text-purple-100 leading-relaxed text-center">
+                  "{inspectingGrave.epitaph}"
+                </p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-between pt-1 gap-3">
+                <button
+                  onClick={() => {
+                    toggleInspectGrave();
+                    onOpenContract(inspectingGrave, 'seance');
+                  }}
+                  className="flex-1 flex items-center justify-center space-x-2 py-2.5 rounded-xl bg-gradient-to-r from-purple-800 to-indigo-800 hover:from-purple-700 hover:to-indigo-700 text-purple-100 font-mono text-xs font-bold shadow-lg transition-all active:scale-95"
+                >
+                  <span>🔮 Commune [E]</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    toggleInspectGrave();
+                    onOpenContract(inspectingGrave, 'resurrection');
+                  }}
+                  className="flex-1 flex items-center justify-center space-x-2 py-2.5 rounded-xl bg-gradient-to-r from-rose-800 to-amber-800 hover:from-rose-700 hover:to-amber-700 text-rose-100 font-mono text-xs font-bold shadow-lg transition-all active:scale-95"
+                >
+                  <span>📜 Resurrect [R]</span>
+                </button>
+
+                <button
+                  onClick={() => toggleInspectGrave()}
+                  className="px-4 py-2.5 rounded-xl bg-obsidian-900 hover:bg-obsidian-800 border border-amber-600/40 text-amber-300 font-mono text-xs transition-all active:scale-95"
+                >
+                  <span>Back [Z]</span>
+                </button>
+              </div>
+
+            </div>
           </div>
         </div>
       )}
