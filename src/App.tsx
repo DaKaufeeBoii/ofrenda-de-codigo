@@ -54,6 +54,19 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     loadData();
+
+    const handleGlobalKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsContractOpen(false);
+        setIs3DAltarOpen(false);
+        setIsOfferingsWallOpen(false);
+        setIsCustomModalOpen(false);
+        setIsOfferingModalOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKey);
+    return () => window.removeEventListener('keydown', handleGlobalKey);
   }, []);
 
   const toggleAmbientSound = () => {
