@@ -254,9 +254,8 @@ export const App: React.FC = () => {
         isOpen={isCustomModalOpen}
         onClose={() => setIsCustomModalOpen(false)}
         onRepoAdded={(newRepo) => {
-          setRepos((prev) => [newRepo, ...prev]);
+          setRepos((prev) => [...prev, newRepo]);
           setSelectedRepo(newRepo);
-          handleOpenContract(newRepo, 'seance');
         }}
       />
 

@@ -151,13 +151,247 @@ const lerpShortestAngle = (from: number, to: number, factor: number): number => 
 };
 
 const GRAVE_COORDS = [
-  { x: -5.5, z: 2 },    // request
-  { x: 5.5, z: 2 },     // moment
-  { x: -7.5, z: -3.5 }, // urllib2
-  { x: 7.5, z: -3.5 },  // coffeescript
-  { x: -4.5, z: 9.5 },  // bower
-  { x: 4.5, z: 9.5 },   // enzyme
+  { x: -5.5, z: 2 },     // 0: request
+  { x: 5.5, z: 2 },      // 1: moment
+  { x: -7.5, z: -3.5 },  // 2: urllib2
+  { x: 7.5, z: -3.5 },   // 3: coffeescript
+  { x: -4.5, z: 9.5 },   // 4: bower
+  { x: 4.5, z: 9.5 },    // 5: enzyme
+  { x: -9.5, z: 3.5 },   // 6: summoned 1
+  { x: 9.5, z: 3.5 },    // 7: summoned 2
+  { x: -7.5, z: -8.0 },  // 8: summoned 3
+  { x: 7.5, z: -8.0 },   // 9: summoned 4
+  { x: -4.5, z: -12.5 }, // 10: summoned 5
+  { x: 4.5, z: -12.5 },  // 11: summoned 6
+  { x: -12.5, z: -2.5 }, // 12: summoned 7
+  { x: 12.5, z: -2.5 },  // 13: summoned 8
+  { x: -8.5, z: 9.5 },   // 14: summoned 9
+  { x: 8.5, z: 9.5 },    // 15: summoned 10
 ];
+
+// Helper: Generates a procedural high-res stone texture with the repository's name deeply engraved
+function createEngravedHeadstoneTexture(repo: DepartedRepo): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 640;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return new THREE.CanvasTexture(canvas);
+
+  // Weathered dark granite slab background
+  ctx.fillStyle = '#1c1428';
+  ctx.fillRect(0, 0, 512, 640);
+
+  // Stone grain & chisel texture noise
+  for (let i = 0; i < 3500; i++) {
+    const nx = Math.random() * 512;
+    const ny = Math.random() * 640;
+    const alpha = Math.random() * 0.09;
+    ctx.fillStyle = Math.random() > 0.5 ? `rgba(255,255,255,${alpha})` : `rgba(0,0,0,${alpha})`;
+    ctx.fillRect(nx, ny, Math.random() * 2 + 1, Math.random() * 2 + 1);
+  }
+
+  // Chiseled border filigree
+  ctx.strokeStyle = '#4a3366';
+  ctx.lineWidth = 6;
+  ctx.strokeRect(20, 20, 472, 600);
+
+  ctx.strokeStyle = '#120b1c';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(26, 26, 460, 588);
+
+  // Occult Cross / Epitaph Header
+  ctx.textAlign = 'center';
+  ctx.font = '32px serif';
+  ctx.fillStyle = '#0f0917';
+  ctx.fillText('†  🪦  †', 256 + 2, 75 + 2);
+  ctx.fillStyle = '#e9d5ff';
+  ctx.fillText('†  🪦  †', 256, 75);
+
+  // ENGRAVED REPOSITORY NAME (Deep carved weathered stone effect)
+  const nameToRender = repo.name.toUpperCase();
+  let nameFontSize = 40;
+  if (nameToRender.length > 22) {
+    nameFontSize = 22;
+  } else if (nameToRender.length > 15) {
+    nameFontSize = 28;
+  } else if (nameToRender.length > 10) {
+    nameFontSize = 34;
+  }
+  ctx.font = `bold ${nameFontSize}px "Cinzel", "Times New Roman", Georgia, serif`;
+
+  // Carved inner shadow
+  ctx.fillStyle = '#0a0510';
+  ctx.fillText(nameToRender, 256 + 2, 150 + 2);
+  ctx.fillText(nameToRender, 256 - 1, 150 - 1);
+
+  // Bevel stone highlight
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(nameToRender, 256, 150);
+
+  // Active Years
+  ctx.font = '22px "Courier New", monospace';
+  ctx.fillStyle = '#0a0510';
+  ctx.fillText(`A.D. ${repo.yearsActive}`, 256 + 1, 205 + 1);
+  ctx.fillStyle = '#fbbf24';
+  ctx.fillText(`A.D. ${repo.yearsActive}`, 256, 205);
+
+  // Stars count
+  ctx.font = 'italic 20px Georgia, serif';
+  ctx.fillStyle = '#d8b4fe';
+  const starCount = repo.starsAtSunset ? repo.starsAtSunset.toLocaleString() : '1,000+';
+  ctx.fillText(`★ ${starCount} Stargazers`, 256, 265);
+
+  // Short carved excerpt
+  ctx.font = 'italic 16px Georgia, serif';
+  ctx.fillStyle = '#e9d5ff';
+  const cleanEpitaph = repo.epitaph 
+    ? (repo.epitaph.length > 48 ? repo.epitaph.slice(0, 45) + '...' : repo.epitaph) 
+    : 'Resting in open source glory';
+  ctx.fillText(`"${cleanEpitaph}"`, 256, 320);
+
+  // Bottom Latin Dedication
+  ctx.font = 'bold 18px monospace';
+  ctx.fillStyle = '#f59e0b';
+  ctx.fillText('• REQUIESCAT IN PACE •', 256, 400);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  return texture;
+}
+
+// Helper: Constructs a complete 3D grave group with headstone, engraved plaque, candles, and wisps
+function buildGrave3D(
+  repo: DepartedRepo,
+  pos: { x: number; z: number },
+  offerings: AltarOffering[],
+  waxMat: THREE.Material,
+  flameGeo: THREE.BufferGeometry,
+  flameMat: THREE.Material,
+  tombstoneMat: THREE.Material,
+  moundMat: THREE.Material
+): Grave3D {
+  const gGroup = new THREE.Group();
+  gGroup.position.set(pos.x, 0, pos.z);
+
+  // 1. Ethereal Rune Ring on Ground
+  const runeRingGeo = new THREE.RingGeometry(1.3, 1.48, 32);
+  runeRingGeo.rotateX(-Math.PI / 2);
+  const runeRingMat = new THREE.MeshBasicMaterial({
+    color: 0xa855f7,
+    side: THREE.DoubleSide,
+    transparent: true,
+    opacity: 0.25,
+  });
+  const runeRing = new THREE.Mesh(runeRingGeo, runeRingMat);
+  runeRing.position.y = 0.05;
+  gGroup.add(runeRing);
+
+  // 2. Grave Mound Earth
+  const moundGeo = new THREE.CylinderGeometry(0.85, 1.15, 0.16, 16);
+  const mound = new THREE.Mesh(moundGeo, moundMat);
+  mound.position.y = 0.08;
+  mound.receiveShadow = true;
+  gGroup.add(mound);
+
+  // 3. 3D Stone Tombstone Group (Tilted gently towards 2.5D camera for clear engraving visibility)
+  const headstoneGroup = new THREE.Group();
+  headstoneGroup.position.set(0, 0, 0);
+  headstoneGroup.rotation.x = -0.16;
+
+  const tombstoneGeo = new THREE.BoxGeometry(1.25, 1.55, 0.38);
+  const tombstone = new THREE.Mesh(tombstoneGeo, tombstoneMat);
+  tombstone.position.y = 0.88;
+  tombstone.castShadow = true;
+  tombstone.receiveShadow = true;
+  headstoneGroup.add(tombstone);
+
+  // 4. Arched Headstone Top
+  const archGeo = new THREE.CylinderGeometry(0.625, 0.625, 0.38, 16);
+  archGeo.rotateZ(Math.PI / 2);
+  const arch = new THREE.Mesh(archGeo, tombstoneMat);
+  arch.position.set(0, 1.65, 0);
+  arch.castShadow = true;
+  headstoneGroup.add(arch);
+
+  // 5. THE ENGRAVED HEADSTONE PLAQUE (High-resolution carved stone texture with repo name)
+  const plaqueGeo = new THREE.PlaneGeometry(1.18, 1.48);
+  const plaqueTexture = createEngravedHeadstoneTexture(repo);
+  const plaqueMat = new THREE.MeshStandardMaterial({
+    map: plaqueTexture,
+    emissiveMap: plaqueTexture,
+    emissive: 0x554466,
+    emissiveIntensity: 0.35,
+    roughness: 0.6,
+    metalness: 0.05,
+  });
+  const plaque = new THREE.Mesh(plaqueGeo, plaqueMat);
+  plaque.position.set(0, 0.88, 0.20);
+  plaque.receiveShadow = true;
+  headstoneGroup.add(plaque);
+
+  gGroup.add(headstoneGroup);
+
+  // 6. 3D Candles at Base of Tombstone
+  const candleLights: THREE.PointLight[] = [];
+  [-0.48, 0.48].forEach((cx) => {
+    const cGeo = new THREE.CylinderGeometry(0.065, 0.075, 0.38, 12);
+    const candle = new THREE.Mesh(cGeo, waxMat);
+    candle.position.set(cx, 0.27, 0.38);
+    candle.castShadow = true;
+    gGroup.add(candle);
+
+    const fl = new THREE.Mesh(flameGeo, flameMat);
+    fl.position.set(cx, 0.52, 0.38);
+    gGroup.add(fl);
+
+    const pLight = new THREE.PointLight(0xff9922, 1.25, 3.8);
+    pLight.position.set(cx, 0.6, 0.38);
+    gGroup.add(pLight);
+    candleLights.push(pLight);
+  });
+
+  // 7. 3D Floating Soul Wisps (Orbiting Grave)
+  const wisps: Grave3D['wisps'] = [];
+  const graveOfferings = offerings.filter((o) => o.repoId === repo.id);
+  const prayerCount = Math.max(1, Math.min(3, graveOfferings.length || 1));
+
+  const wispGeo = new THREE.SphereGeometry(0.12, 16, 16);
+  const wispMat = new THREE.MeshStandardMaterial({
+    color: 0xd946ef,
+    emissive: 0xa855f7,
+    emissiveIntensity: 0.95,
+  });
+
+  for (let i = 0; i < prayerCount; i++) {
+    const off = graveOfferings[i] || {
+      message: `In memory of ${repo.name}. Rest well.`,
+      authorName: 'Graveyard Devotee',
+    };
+
+    const wispMesh = new THREE.Mesh(wispGeo, wispMat);
+    wispMesh.position.set(0, 1.4, 0);
+    gGroup.add(wispMesh);
+
+    wisps.push({
+      mesh: wispMesh,
+      angle: (i * Math.PI * 2) / prayerCount,
+      radius: 1.15 + i * 0.35,
+      speed: 0.018 + (i % 2 === 0 ? 0.005 : -0.005),
+      prayer: off.message,
+      author: off.authorName,
+    });
+  }
+
+  return {
+    repo,
+    group: gGroup,
+    x: pos.x,
+    z: pos.z,
+    runeRing,
+    candleLights,
+    wisps,
+  };
+}
 
 export const Cemetery3D: React.FC<Cemetery3DProps> = ({
   repos,
@@ -218,6 +452,13 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
   const lanternSwingRef = useRef<THREE.Group | null>(null);
   const targetRingRef = useRef<THREE.Mesh | null>(null);
   const graves3DRef = useRef<Grave3D[]>([]);
+  const graveAssetsRef = useRef<{
+    waxMat: THREE.Material;
+    flameGeo: THREE.BufferGeometry;
+    flameMat: THREE.Material;
+    tombstoneMat: THREE.Material;
+    moundMat: THREE.Material;
+  } | null>(null);
   const petalsMeshRef = useRef<THREE.InstancedMesh | null>(null);
   const petalDataRef = useRef<{ pos: THREE.Vector3; rot: THREE.Euler; speed: number; rotSpeed: THREE.Vector3 }[]>([]);
 
@@ -330,6 +571,7 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
         else if (repos.length > 0) onOpenContract(repos[0], 'resurrection');
       }
       if (key === '5') onOpenOfferingsWall();
+      if (key === 'g') onOpenSummonModal();
 
       // [C] or [Tab]: Codex of the Dead
       if (key === 'c') {
@@ -598,8 +840,18 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
     scene.add(gateGroup);
 
     // 10. 3D TOMBSTONES & ETHEREAL RUNE RINGS FOR EACH REPO
-    const graves3D: Grave3D[] = [];
+    const tombstoneMat = new THREE.MeshStandardMaterial({ color: 0x241934, roughness: 0.8 });
+    const moundMat = new THREE.MeshStandardMaterial({ color: 0x130e1d, roughness: 0.95 });
 
+    graveAssetsRef.current = {
+      waxMat,
+      flameGeo,
+      flameMat,
+      tombstoneMat,
+      moundMat,
+    };
+
+    const graves3D: Grave3D[] = [];
     const initialRepos = reposRef.current.length > 0 ? reposRef.current : [
       { id: 'request', name: 'request', yearsActive: '2011 – 2020', candlesLit: 1428, starsAtSunset: 25485 } as DepartedRepo,
       { id: 'moment', name: 'moment.js', yearsActive: '2011 – 2020', candlesLit: 2154, starsAtSunset: 47885 } as DepartedRepo,
@@ -611,113 +863,23 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
 
     initialRepos.forEach((repo, idx) => {
       const pos = GRAVE_COORDS[idx] || {
-        x: ((idx * 5) % 18) - 9,
-        z: Math.floor(idx / 4) * 6 - 8,
+        x: ((idx * 6) % 26) - 13,
+        z: Math.floor(idx / 4) * 5 - 10,
       };
 
-      const gGroup = new THREE.Group();
-      gGroup.position.set(pos.x, 0, pos.z);
-
-      // Ethereal Rune Ring on Ground
-      const runeRingGeo = new THREE.RingGeometry(1.3, 1.48, 32);
-      runeRingGeo.rotateX(-Math.PI / 2);
-      const runeRingMat = new THREE.MeshBasicMaterial({
-        color: 0xa855f7,
-        side: THREE.DoubleSide,
-        transparent: true,
-        opacity: 0.25,
-      });
-      const runeRing = new THREE.Mesh(runeRingGeo, runeRingMat);
-      runeRing.position.y = 0.05;
-      gGroup.add(runeRing);
-
-      // Grave Mound Earth
-      const moundGeo = new THREE.CylinderGeometry(0.85, 1.15, 0.16, 16);
-      const moundMat = new THREE.MeshStandardMaterial({ color: 0x130e1d, roughness: 0.95 });
-      const mound = new THREE.Mesh(moundGeo, moundMat);
-      mound.position.y = 0.08;
-      mound.receiveShadow = true;
-      gGroup.add(mound);
-
-      // 3D Stone Tombstone
-      const tombstoneGeo = new THREE.BoxGeometry(1.25, 1.55, 0.38);
-      const tombstoneMat = new THREE.MeshStandardMaterial({ color: 0x241934, roughness: 0.8 });
-      const tombstone = new THREE.Mesh(tombstoneGeo, tombstoneMat);
-      tombstone.position.y = 0.88;
-      tombstone.castShadow = true;
-      tombstone.receiveShadow = true;
-      gGroup.add(tombstone);
-
-      // Arched Headstone Top
-      const archGeo = new THREE.CylinderGeometry(0.625, 0.625, 0.38, 16);
-      archGeo.rotateZ(Math.PI / 2);
-      const arch = new THREE.Mesh(archGeo, tombstoneMat);
-      arch.position.set(0, 1.65, 0);
-      arch.castShadow = true;
-      gGroup.add(arch);
-
-      // 3D Candles at Base of Tombstone
-      const candleLights: THREE.PointLight[] = [];
-      [-0.48, 0.48].forEach((cx) => {
-        const cGeo = new THREE.CylinderGeometry(0.065, 0.075, 0.38, 12);
-        const candle = new THREE.Mesh(cGeo, waxMat);
-        candle.position.set(cx, 0.27, 0.38);
-        candle.castShadow = true;
-        gGroup.add(candle);
-
-        const fl = new THREE.Mesh(flameGeo, flameMat);
-        fl.position.set(cx, 0.52, 0.38);
-        gGroup.add(fl);
-
-        const pLight = new THREE.PointLight(0xff9922, 1.25, 3.8);
-        pLight.position.set(cx, 0.6, 0.38);
-        gGroup.add(pLight);
-        candleLights.push(pLight);
-      });
-
-      // 3D Floating Soul Wisps (Orbiting Grave)
-      const wisps: Grave3D['wisps'] = [];
-      const graveOfferings = offeringsRef.current.filter((o) => o.repoId === repo.id);
-      const prayerCount = Math.max(1, Math.min(3, graveOfferings.length || 1));
-
-      const wispGeo = new THREE.SphereGeometry(0.12, 16, 16);
-      const wispMat = new THREE.MeshStandardMaterial({
-        color: 0xd946ef,
-        emissive: 0xa855f7,
-        emissiveIntensity: 0.95,
-      });
-
-      for (let i = 0; i < prayerCount; i++) {
-        const off = graveOfferings[i] || {
-          message: `In memory of ${repo.name}. Rest well.`,
-          authorName: 'Graveyard Devotee',
-        };
-
-        const wispMesh = new THREE.Mesh(wispGeo, wispMat);
-        wispMesh.position.set(0, 1.4, 0);
-        gGroup.add(wispMesh);
-
-        wisps.push({
-          mesh: wispMesh,
-          angle: (i * Math.PI * 2) / prayerCount,
-          radius: 1.15 + i * 0.35,
-          speed: 0.018 + (i % 2 === 0 ? 0.005 : -0.005),
-          prayer: off.message,
-          author: off.authorName,
-        });
-      }
-
-      scene.add(gGroup);
-
-      graves3D.push({
+      const grave = buildGrave3D(
         repo,
-        group: gGroup,
-        x: pos.x,
-        z: pos.z,
-        runeRing,
-        candleLights,
-        wisps,
-      });
+        pos,
+        offeringsRef.current,
+        waxMat,
+        flameGeo,
+        flameMat,
+        tombstoneMat,
+        moundMat
+      );
+
+      scene.add(grave.group);
+      graves3D.push(grave);
     });
 
     graves3DRef.current = graves3D;
@@ -1326,13 +1488,72 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
     };
   }, []);
 
-  // Synchronize live repository stats without tearing down WebGL renderer context
+  // Synchronize live repository stats and dynamically erect new graves when repos are summoned
   useEffect(() => {
-    if (repos.length === 0) return;
-    graves3DRef.current.forEach((grave, idx) => {
-      const matching = repos.find((r) => r.id === grave.repo.id) || repos[idx];
-      if (matching) {
-        grave.repo = matching;
+    const assets = graveAssetsRef.current;
+    if (repos.length === 0 || !sceneRef.current || !assets) return;
+
+    repos.forEach((repo, idx) => {
+      const existing = graves3DRef.current.find((g) => g.repo.id === repo.id);
+      if (existing) {
+        existing.repo = repo;
+      } else {
+        // Erect a new 3D tombstone for the summoned repo!
+        const pos = GRAVE_COORDS[idx] || {
+          x: ((idx * 6) % 26) - 13,
+          z: Math.floor(idx / 4) * 5 - 10,
+        };
+
+        const newGrave = buildGrave3D(
+          repo,
+          pos,
+          offeringsRef.current,
+          assets.waxMat,
+          assets.flameGeo,
+          assets.flameMat,
+          assets.tombstoneMat,
+          assets.moundMat
+        );
+
+        sceneRef.current?.add(newGrave.group);
+        graves3DRef.current.push(newGrave);
+
+        // Mystical Summoning Pillar / Beacon of Light
+        const beaconGeo = new THREE.CylinderGeometry(0.5, 0.5, 14, 16);
+        const beaconMat = new THREE.MeshBasicMaterial({
+          color: 0x38bdf8,
+          transparent: true,
+          opacity: 0.85,
+          side: THREE.DoubleSide,
+        });
+        const beacon = new THREE.Mesh(beaconGeo, beaconMat);
+        beacon.position.set(pos.x, 7, pos.z);
+        sceneRef.current?.add(beacon);
+
+        let fadeCount = 0;
+        const fadeInterval = setInterval(() => {
+          fadeCount++;
+          beaconMat.opacity -= 0.025;
+          if (fadeCount > 35 || beaconMat.opacity <= 0) {
+            clearInterval(fadeInterval);
+            sceneRef.current?.remove(beacon);
+            beaconGeo.dispose();
+            beaconMat.dispose();
+          }
+        }, 80);
+
+        playProceduralSFX('gong');
+        setHudMessage(`🪦 New Tombstone erected for "${repo.name}" with engraved stone epitaph!`);
+        setTimeout(() => setHudMessage(null), 5500);
+
+        // Pathfind player towards the newly summoned grave
+        playerState.current.targetX = pos.x;
+        playerState.current.targetZ = pos.z + 2.2;
+        playerState.current.hasTarget = true;
+        if (targetRingRef.current) {
+          targetRingRef.current.position.set(pos.x, 0.08, pos.z + 2.2);
+          (targetRingRef.current.material as THREE.MeshBasicMaterial).opacity = 0.9;
+        }
       }
     });
   }, [repos, offerings]);
@@ -1586,6 +1807,16 @@ export const Cemetery3D: React.FC<Cemetery3DProps> = ({
         >
           <span className="text-lg">🪦</span>
           <span className="absolute top-1 left-1.5 text-[9px] font-mono font-bold text-indigo-300/80">5</span>
+        </button>
+
+        {/* Slot 6: Summon Repository Grave */}
+        <button
+          onClick={onOpenSummonModal}
+          title="Summon Departed Repository Grave [Key G]"
+          className="relative group w-12 h-12 rounded-xl bg-gradient-to-b from-sky-950/60 to-obsidian-900 border border-sky-600/40 hover:border-sky-400 flex flex-col items-center justify-center transition-all active:scale-95"
+        >
+          <span className="text-lg">⚡</span>
+          <span className="absolute top-1 left-1.5 text-[9px] font-mono font-bold text-sky-300/80">G</span>
         </button>
 
         <div className="w-[1px] h-8 bg-purple-900/60 mx-1" />
